@@ -41,15 +41,23 @@ async function run() {
 
   const allJobs = normalizeAndDeduplicate([...jsearchJobs, ...adzunaJobs]);
 
-  const included = allJobs.filter(j => !j._location_excluded);
-  const excluded = allJobs.filter(j => j._location_excluded);
-  const flagged  = included.filter(j => j._location_flagged);
+  const locationIncluded = allJobs.filter(j => !j._location_excluded);
+  const excluded         = allJobs.filter(j => j._location_excluded);
+  const germanOnly       = locationIncluded.filter(j => j._german_only);
+  const included         = locationIncluded.filter(j => !j._german_only);
+  const flagged          = included.filter(j => j._location_flagged);
 
   console.log(`\n--- After deduplication: ${allJobs.length} unique jobs ---`);
   console.log(`\n--- Location filtering ---`);
   console.log(`  Included:         ${included.length}`);
   console.log(`  Excluded:         ${excluded.length}`);
+  console.log(`  German-only (excluded): ${germanOnly.length}`);
   console.log(`  Flagged (review): ${flagged.length}`);
+
+  if (germanOnly.length > 0) {
+    console.log(`\n--- German-only listings (excluded) ---`);
+    germanOnly.forEach(j => console.log(`  ${j.title} @ ${j.company}`));
+  }
 
   const jsearchFinal = included.filter(j => j.source === 'jsearch').length;
   const adzunaFinal  = included.filter(j => j.source === 'adzuna').length;

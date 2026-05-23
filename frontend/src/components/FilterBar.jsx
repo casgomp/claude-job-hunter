@@ -1,24 +1,11 @@
 export default function FilterBar({ filters, onChange }) {
   const set = (key, val) => onChange(prev => ({ ...prev, [key]: val }))
 
-  const tiers    = ['all', '1', '2', '3']
-  const statuses = ['all', 'new', 'saved', 'applied', 'rejected']
+  const statuses  = ['all', 'new', 'saved', 'applied', 'rejected']
+  const workTypes = ['all', 'remote', 'hybrid', 'onsite']
 
   return (
     <div className="filter-bar">
-      <div className="filter-group">
-        <span className="filter-label">Tier</span>
-        {tiers.map(t => (
-          <button
-            key={t}
-            className={`filter-btn ${t !== 'all' ? `t${t}` : ''} ${filters.tier === t ? 'active' : ''}`}
-            onClick={() => set('tier', t)}
-          >
-            {t === 'all' ? 'All' : `T${t}`}
-          </button>
-        ))}
-      </div>
-
       <div className="filter-group">
         <span className="filter-label">Status</span>
         {statuses.map(s => (
@@ -33,6 +20,19 @@ export default function FilterBar({ filters, onChange }) {
       </div>
 
       <div className="filter-group">
+        <span className="filter-label">Work type</span>
+        {workTypes.map(w => (
+          <button
+            key={w}
+            className={`filter-btn ${filters.workType === w ? 'active' : ''}`}
+            onClick={() => set('workType', w)}
+          >
+            {w === 'all' ? 'All' : w.charAt(0).toUpperCase() + w.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      <div className="filter-group">
         <span className="filter-label">Min score: {filters.minScore}</span>
         <input
           type="range" min="1" max="10"
@@ -41,15 +41,6 @@ export default function FilterBar({ filters, onChange }) {
           className="score-slider"
         />
       </div>
-
-      <label className="toggle-label">
-        <input
-          type="checkbox"
-          checked={filters.hideTier3}
-          onChange={e => set('hideTier3', e.target.checked)}
-        />
-        Hide Tier 3
-      </label>
     </div>
   )
 }

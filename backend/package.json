@@ -7,6 +7,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "migrate": "node src/migrate.js",
+    "rescore": "node src/rescore.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

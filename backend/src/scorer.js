@@ -21,13 +21,17 @@ ${fs.readFileSync(CRITERIA_PATH, 'utf8')}
 </criteria>
 
 Evaluation rules:
-- tier: 1 (Strong Match), 2 (Possible Match), or 3 (Stretch/Unlikely). Follow the exact tier definitions in the criteria.
-- score: integer 1–10 (10 = perfect match within tier)
-- reasoning: 2–4 sentences explaining the tier and score
-- eligibility_flags: array of strings for any risks or flags (e.g. Werkstudent eligibility risk, degree requirement, German C1 mandatory, onsite location flagged). Empty array if none.
-- highlights: 1–2 sentences on what makes this role specifically interesting for the candidate
+- match_score: integer 1–10 (10 = perfect match for the candidate's profile and goals). Follow the Match Scoring section in the criteria.
+- reasoning: 2–3 sentences explaining the match score — focus on role fit, eligibility risks, and location.
+- eligibility_flags: array of specific concern strings (e.g. "requires degree", "Werkstudent eligibility uncertain", "requires C1 German", "requires US work authorization", "requires Japanese language"). Empty array if none.
+- highlights: 1–2 sentences on what makes this role specifically interesting for the candidate, or why it scores low.
+- stack: array of programming languages, frameworks, and tools explicitly mentioned in the posting (e.g. ["Python", "Django", "PostgreSQL"]). Empty array if none specified.
+- experience_required: one of exactly: "entry-level", "0-1 years", "1-2 years", "2+ years", or "not specified".
+- contract_type: one of exactly: "internship", "Werkstudent", "full-time", "part-time", "contract", or "not specified".
 
-Return ONLY valid JSON with these keys: tier, score, reasoning, eligibility_flags, highlights.
+If the job description is written almost entirely in German (not English or bilingual), score it 1–2 and add "German-only listing" to eligibility_flags.
+
+Return ONLY valid JSON with these keys: match_score, reasoning, eligibility_flags, highlights, stack, experience_required, contract_type.
 Do not include markdown fences or any text outside the JSON object.`;
 
 async function scoreJob(client, job) {
@@ -35,6 +39,7 @@ async function scoreJob(client, job) {
     `Title: ${job.title || 'N/A'}`,
     `Company: ${job.company || 'N/A'}`,
     `Location: ${job.location || 'N/A'}`,
+    `Country: ${job._country || 'N/A'}`,
     `Work type: ${job._work_type || 'N/A'}`,
     `Salary: ${job.salary || 'N/A'}`,
     `Source: ${job.source}`,
@@ -45,7 +50,7 @@ async function scoreJob(client, job) {
 
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 600,
+    max_tokens: 700,
     thinking: { type: 'adaptive' },
     system: [
       {
@@ -71,12 +76,12 @@ async function scoreJob(client, job) {
 
 async function selfEvaluate(client, scoredJobs) {
   const summary = scoredJobs.map(j =>
-    `- [T${j.tier}] "${j.title}" @ ${j.company} (score ${j.score}): ${j.reasoning}`
+    `- (${j.score}/10) "${j.title}" @ ${j.company}: ${j.reasoning}`
   ).join('\n');
 
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 800,
+    max_tokens: 600,
     thinking: { type: 'adaptive' },
     system: [
       {
@@ -88,7 +93,7 @@ async function selfEvaluate(client, scoredJobs) {
     messages: [
       {
         role: 'user',
-        content: `Review the following batch of job evaluations for consistency and calibration. Flag any that seem mis-tiered or mis-scored relative to each other. Return a JSON object with:\n- issues: array of { title, company, issue } for any problems\n- overall_quality: "good" | "review_needed"\n- notes: 1–2 sentences on overall calibration\n\nEvaluations:\n${summary}`,
+        content: `Review the following batch of job evaluations for score consistency and calibration. Flag any that seem mis-scored relative to each other or the criteria. Return a JSON object with:\n- issues: array of { title, company, issue } for any problems\n- overall_quality: "good" | "review_needed"\n- notes: 1–2 sentences on overall calibration\n\nEvaluations:\n${summary}`,
       },
     ],
   });
@@ -132,21 +137,34 @@ async function run() {
       await sleep(INTER_CALL_DELAY);
       try {
         const { parsed, usage } = await scoreJob(client, job);
-        const scored = { ...job, ...parsed };
+        const scored = {
+          ...job,
+          score:               parsed.match_score,
+          reasoning:           parsed.reasoning,
+          eligibility_flags:   parsed.eligibility_flags,
+          highlights:          parsed.highlights,
+          stack:               parsed.stack,
+          experience_required: parsed.experience_required,
+          contract_type:       parsed.contract_type,
+        };
         scoredJobs.push(scored);
         logger.logJob({
           jobTitle: job.title,
-          company: job.company,
-          tier: parsed.tier,
-          score: parsed.score,
+          company:  job.company,
+          score:    parsed.match_score,
           tokensUsed: usage,
         });
-        const flags = parsed.eligibility_flags?.length ? ` [!${parsed.eligibility_flags.length} flag(s)]` : '';
-        console.log(`  T${parsed.tier} (${parsed.score}/10)${flags}  ${job.title} @ ${job.company}`);
+        const flags = parsed.eligibility_flags?.length ? ` [!${parsed.eligibility_flags.length}]` : '';
+        console.log(`  (${parsed.match_score}/10)${flags}  ${job.title} @ ${job.company}`);
       } catch (err) {
         console.warn(`  ERROR: ${job.title} @ ${job.company} — ${err.message}`);
         logger.logError({ message: `${job.title} @ ${job.company}: ${err.message}` });
-        scoredJobs.push({ ...job, tier: null, score: null, reasoning: null, eligibility_flags: [], highlights: null, _scoring_error: err.message });
+        scoredJobs.push({
+          ...job,
+          score: null, reasoning: null, eligibility_flags: [], highlights: null,
+          stack: [], experience_required: null, contract_type: null,
+          _scoring_error: err.message,
+        });
       }
     }
   }
@@ -154,12 +172,11 @@ async function run() {
   console.log('\n--- Self-evaluation ---');
   let selfEval = null;
   try {
-    const validScored = scoredJobs.filter(j => j.tier !== null);
+    const validScored = scoredJobs.filter(j => j.score !== null);
     selfEval = await selfEvaluate(client, validScored);
     console.log(`  Quality: ${selfEval?.overall_quality ?? 'n/a'}`);
     if (selfEval?.issues?.length) {
-      console.log(`  Issues flagged: ${selfEval.issues.length}`);
-      selfEval.issues.forEach(i => console.log(`    - ${i.title} @ ${i.company}: ${i.issue}`));
+      selfEval.issues.forEach(i => console.log(`  - ${i.title} @ ${i.company}: ${i.issue}`));
     }
     if (selfEval?.notes) console.log(`  Notes: ${selfEval.notes}`);
   } catch (err) {
@@ -167,34 +184,34 @@ async function run() {
     logger.logError({ message: `self-eval: ${err.message}` });
   }
 
-  // Save output
   fs.writeFileSync(OUTPUT_PATH, JSON.stringify(scoredJobs, null, 2));
   console.log(`\nSaved to backend/scored_jobs.json`);
 
-  // Tier breakdown
-  const tierBreakdown = { 1: 0, 2: 0, 3: 0, null: 0 };
+  const scoreBreakdown = { high: 0, mid: 0, low: 0, error: 0 };
   for (const j of scoredJobs) {
-    const t = j.tier ?? null;
-    tierBreakdown[t] = (tierBreakdown[t] || 0) + 1;
+    if (j.score === null) scoreBreakdown.error++;
+    else if (j.score >= 7)  scoreBreakdown.high++;
+    else if (j.score >= 4)  scoreBreakdown.mid++;
+    else                    scoreBreakdown.low++;
   }
 
-  console.log('\n=== Tier Breakdown ===');
-  console.log(`  Tier 1 (Strong Match):    ${tierBreakdown[1]}`);
-  console.log(`  Tier 2 (Possible Match):  ${tierBreakdown[2]}`);
-  console.log(`  Tier 3 (Stretch):         ${tierBreakdown[3]}`);
-  if (tierBreakdown[null]) console.log(`  Errors (unscored):        ${tierBreakdown[null]}`);
-  console.log(`  Total:                    ${scoredJobs.length}`);
+  console.log('\n=== Score Breakdown ===');
+  console.log(`  High (7-10): ${scoreBreakdown.high}`);
+  console.log(`  Mid  (4-6):  ${scoreBreakdown.mid}`);
+  console.log(`  Low  (1-3):  ${scoreBreakdown.low}`);
+  if (scoreBreakdown.error) console.log(`  Errors:      ${scoreBreakdown.error}`);
+  console.log(`  Total:       ${scoredJobs.length}`);
 
   const logPath = logger.append({
     totalJobs: scoredJobs.length,
-    tierBreakdown,
+    tierBreakdown: scoreBreakdown,
     selfEval,
   });
   console.log(`Logged to ${path.relative(process.cwd(), logPath)}`);
 
-  console.log('\n=== Tier 1 Jobs ===');
+  console.log('\n=== Top Matches (score >= 7) ===');
   scoredJobs
-    .filter(j => j.tier === 1)
+    .filter(j => j.score >= 7)
     .sort((a, b) => (b.score || 0) - (a.score || 0))
     .forEach(j => {
       const flags = j.eligibility_flags?.length ? ` [${j.eligibility_flags.join('; ')}]` : '';
@@ -202,7 +219,11 @@ async function run() {
     });
 }
 
-run().catch(err => {
-  console.error('\nFatal error:', err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  run().catch(err => {
+    console.error('\nFatal error:', err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { scoreJob, SYSTEM_PROMPT };
