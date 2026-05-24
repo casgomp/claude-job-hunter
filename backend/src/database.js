@@ -137,6 +137,12 @@ function updateJobScoring(id, { score, reasoning, eligibility_flags, highlights,
   }).changes;
 }
 
+function updateCvGenerated(id) {
+  return getDb()
+    .prepare(`UPDATE jobs SET cv_generated = 1, updated_at = datetime('now') WHERE id = ?`)
+    .run(id).changes;
+}
+
 function updateJobStatus(id, status) {
   const d = getDb();
   const valid = ['new', 'saved', 'rejected', 'applied'];
@@ -176,6 +182,6 @@ function getRuns() {
 }
 
 module.exports = {
-  getDb, insertJob, updateJobStatus, updateJobScoring, getJobs, getJobById,
-  jobExistsByUrl, insertRun, getRuns,
+  getDb, insertJob, updateJobStatus, updateJobScoring, updateCvGenerated,
+  getJobs, getJobById, jobExistsByUrl, insertRun, getRuns,
 };

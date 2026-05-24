@@ -7,15 +7,19 @@ const fs           = require('fs');
 const { execFile } = require('child_process');
 
 const {
-  getJobs, getJobById, updateJobStatus,
+  getJobs, getJobById, updateJobStatus, updateCvGenerated,
   insertJob, insertRun, getRuns,
 } = require('./database');
+const { generateCv } = require('./cvGenerator');
 
 const app  = express();
 const PORT = process.env.PORT || 5000;
 
+const CV_DIR = path.join(__dirname, '../generated_cvs');
+
 app.use(cors());
 app.use(express.json());
+app.use('/cvs', express.static(CV_DIR));
 
 // ─── Jobs ────────────────────────────────────────────────────────────────────
 
@@ -47,6 +51,23 @@ app.patch('/api/jobs/:id/status', (req, res) => {
     res.json({ success: true, id: parseInt(req.params.id, 10), status });
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// ─── CV Generator ────────────────────────────────────────────────────────────
+
+app.post('/api/jobs/:id/generate-cv', async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const job = getJobById(id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+
+  try {
+    const { filename } = await generateCv(job);
+    updateCvGenerated(id);
+    res.json({ success: true, filename, url: `/cvs/${filename}` });
+  } catch (err) {
+    console.error('[cv] Generation failed:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -453,3 +453,10 @@ h1, h2, h3, h4 { font-weight: 600; color: var(--text-bright); margin: 0; }
 .action-btn.rejected:hover, .action-btn.rejected.is-active { background: var(--rejected-color); border-color: var(--rejected-color); color: #fff; }
 
 .footer-status { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
+
+.cv-section { display: flex; align-items: center; }
+.action-btn.cv-btn { background: rgba(251,191,36,0.08); border-color: rgba(251,191,36,0.35); color: #fbbf24; }
+.action-btn.cv-btn:hover { background: rgba(251,191,36,0.18); }
+.action-btn.cv-btn.is-active { background: rgba(251,191,36,0.22); border-color: #fbbf24; }
+.cv-loading { font-size: 11px; color: #fbbf24; opacity: 0.8; animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }

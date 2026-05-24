@@ -1,4 +1,7 @@
+import { useState } from 'react'
 import { parseCity, parseCountry } from '../App'
+
+const API = 'http://172.31.202.183:5000'
 
 function formatDate(iso) {
   if (!iso) return null
@@ -11,6 +14,11 @@ export default function JobDetail({ job, onClose, onStatusUpdate }) {
   const date    = formatDate(job.date_posted)
   const flags   = job.eligibility_flags ?? []
 
+  const [cvState, setCvState] = useState(
+    job.cv_generated ? 'done' : 'idle'
+  )
+  const [cvUrl, setCvUrl] = useState(null)
+
   const actions = [
     { key: 'saved',    label: '💾 Save' },
     { key: 'applied',  label: '✓ Applied' },
@@ -19,6 +27,24 @@ export default function JobDetail({ job, onClose, onStatusUpdate }) {
 
   const handleAction = (status) => {
     onStatusUpdate(job.id, job.status === status ? 'new' : status)
+  }
+
+  const handleGenerateCv = async () => {
+    setCvState('loading')
+    setCvUrl(null)
+    try {
+      const res = await fetch(`${API}/api/jobs/${job.id}/generate-cv`, { method: 'POST' })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Generation failed')
+      }
+      const data = await res.json()
+      setCvUrl(`${API}${data.url}`)
+      setCvState('done')
+    } catch (err) {
+      console.error('[cv]', err.message)
+      setCvState('error')
+    }
   }
 
   return (
@@ -120,6 +146,39 @@ export default function JobDetail({ job, onClose, onStatusUpdate }) {
             </button>
           ))}
         </div>
+
+        <div className="cv-section">
+          {cvState === 'idle' && (
+            <button className="action-btn cv-btn" onClick={handleGenerateCv}>
+              ✦ Generate CV
+            </button>
+          )}
+          {cvState === 'loading' && (
+            <span className="cv-loading">Generating CV…</span>
+          )}
+          {cvState === 'done' && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <a
+                href={cvUrl || '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="action-btn cv-btn is-active"
+              >
+                ↓ Download CV
+              </a>
+              <button className="action-btn cv-btn" onClick={handleGenerateCv} style={{ opacity: 0.6, fontSize: 10 }}>
+                Regenerate
+              </button>
+            </div>
+          )}
+          {cvState === 'error' && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--score-low)' }}>Generation failed</span>
+              <button className="action-btn cv-btn" onClick={handleGenerateCv}>Retry</button>
+            </div>
+          )}
+        </div>
+
         <div className="footer-status">
           <span className={`status-badge status-${job.status}`}>{job.status}</span>
         </div>

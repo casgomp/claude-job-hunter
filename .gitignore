@@ -119,6 +119,9 @@ dist
 *.db-shm
 *.db-wal
 
+# Generated CVs
+backend/generated_cvs/
+
 # Firebase cache directory
 .firebase/
 
