@@ -7,12 +7,12 @@ const COLUMNS = [
   { key: 'city',                label: 'City',     sortable: true,  cls: 'col-city'    },
   { key: 'country',             label: 'Country',  sortable: true,  cls: 'col-country' },
   { key: 'work_type',           label: 'Work type',sortable: true,  cls: 'col-worktype'},
-  { key: 'salary',              label: 'Salary',   sortable: true,  cls: 'col-salary'  },
   { key: 'stack',               label: 'Stack',    sortable: false, cls: 'col-stack'   },
   { key: 'experience_required', label: 'Exp.',     sortable: true,  cls: 'col-exp'     },
   { key: 'contract_type',       label: 'Contract', sortable: true,  cls: 'col-contract'},
   { key: 'flag_count',          label: '⚠',        sortable: true,  cls: 'col-flags'   },
   { key: 'status',              label: 'Status',   sortable: true,  cls: 'col-status'  },
+  { key: 'rated',               label: '★',        sortable: true,  cls: 'col-rated'   },
 ]
 
 function scoreClass(score) {
@@ -26,11 +26,6 @@ function shortStack(stack) {
   if (!stack?.length) return null
   if (stack.length <= 3) return stack.join(', ')
   return `${stack.slice(0, 3).join(', ')} +${stack.length - 3}`
-}
-
-function shortSalary(salary) {
-  if (!salary) return null
-  return salary.length > 22 ? salary.slice(0, 22) + '…' : salary
 }
 
 export default function JobTable({ jobs, selectedJobId, sortConfig, onSort, onJobClick }) {
@@ -61,10 +56,11 @@ export default function JobTable({ jobs, selectedJobId, sortConfig, onSort, onJo
       </thead>
       <tbody>
         {jobs.map(job => {
-          const city    = parseCity(job.location, job.work_type)
-          const country = parseCountry(job.location, job.country)
-          const stack   = shortStack(job.stack)
-          const flags   = job.eligibility_flags?.length ?? 0
+          const city       = parseCity(job.location, job.work_type)
+          const country    = parseCountry(job.location, job.country)
+          const stack      = shortStack(job.stack)
+          const flags      = job.eligibility_flags?.length ?? 0
+          const isRated    = job.rating != null
           const isSelected = job.id === selectedJobId
 
           return (
@@ -87,9 +83,6 @@ export default function JobTable({ jobs, selectedJobId, sortConfig, onSort, onJo
                   ? <span className={`work-badge ${job.work_type}`}>{job.work_type}</span>
                   : <span className="muted">—</span>}
               </td>
-              <td className="col-salary">
-                {shortSalary(job.salary) || <span className="muted">—</span>}
-              </td>
               <td className="col-stack">
                 <span className="stack-cell">{stack || <span className="muted">—</span>}</span>
               </td>
@@ -102,6 +95,11 @@ export default function JobTable({ jobs, selectedJobId, sortConfig, onSort, onJo
               </td>
               <td className="col-status">
                 <span className={`status-badge status-${job.status}`}>{job.status}</span>
+              </td>
+              <td className="col-rated">
+                {isRated
+                  ? <span className="rated-check">✓</span>
+                  : <span className="muted">—</span>}
               </td>
             </tr>
           )

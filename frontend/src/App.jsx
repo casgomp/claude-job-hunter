@@ -30,6 +30,7 @@ function getSortValue(job, key) {
   if (key === 'city')       return parseCity(job.location, job.work_type).toLowerCase()
   if (key === 'country')    return parseCountry(job.location, job.country).toLowerCase()
   if (key === 'flag_count') return job.eligibility_flags?.length ?? 0
+  if (key === 'rated')     return job.rating != null ? 1 : 0
   const val = job[key]
   if (val == null) return ''
   return typeof val === 'string' ? val.toLowerCase() : val
