@@ -128,6 +128,7 @@ backend/scored_jobs.json
 backend/logs/
 scraper/raw_jobs.json
 scraper/logs/
+base_cv.md
 
 # Firebase cache directory
 .firebase/
