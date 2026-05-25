@@ -460,3 +460,66 @@ h1, h2, h3, h4 { font-weight: 600; color: var(--text-bright); margin: 0; }
 .action-btn.cv-btn.is-active { background: rgba(251,191,36,0.22); border-color: #fbbf24; }
 .cv-loading { font-size: 11px; color: #fbbf24; opacity: 0.8; animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+/* ── Evaluate button ───────────────────────────────────────── */
+.btn-evaluate {
+  margin-left: auto;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 5px;
+  border: 1px solid rgba(99,102,241,0.35);
+  background: rgba(99,102,241,0.08);
+  color: var(--accent);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.btn-evaluate:hover { background: rgba(99,102,241,0.18); border-color: var(--accent); }
+
+/* ── Eval modal ────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+}
+.eval-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 680px;
+  max-width: 95vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.eval-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.eval-modal-header h2 { font-size: 14px; font-weight: 600; color: var(--text-bright); }
+.eval-idle, .eval-loading, .eval-error {
+  padding: 32px 24px;
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  color: var(--text); font-size: 13px; text-align: center;
+}
+.eval-loading { flex-direction: row; justify-content: center; font-size: 13px; color: var(--text-muted); }
+.eval-report { padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.eval-summary-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.eval-badge { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+.eval-meta { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+.eval-summary-text { font-size: 12px; color: var(--text); line-height: 1.55; }
+.eval-section h4 { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
+.eval-issues { display: flex; flex-direction: column; gap: 8px; }
+.eval-issue { background: var(--card); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 10px 12px; }
+.eval-issue-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+.eval-type-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; }
+.eval-issue-title { font-size: 12px; color: var(--text-bright); font-weight: 500; flex: 1; }
+.eval-issue-score { font-size: 11px; color: var(--text-muted); }
+.eval-issue-desc { font-size: 11px; color: var(--text); line-height: 1.5; }
+.eval-no-issues { font-size: 12px; color: var(--score-high); }
+.eval-recs { padding-left: 16px; display: flex; flex-direction: column; gap: 4px; }
+.eval-recs li { font-size: 12px; color: var(--text); line-height: 1.5; }

@@ -9,6 +9,7 @@
     "migrate": "node src/migrate.js",
     "rescore": "node src/rescore.js",
     "sync": "node src/sync.js",
+    "evaluate": "node src/evaluator.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

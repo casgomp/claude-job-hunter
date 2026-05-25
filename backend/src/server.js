@@ -10,7 +10,8 @@ const {
   getJobs, getJobById, updateJobStatus, updateCvGenerated,
   insertJob, insertRun, getRuns,
 } = require('./database');
-const { generateCv } = require('./cvGenerator');
+const { generateCv }    = require('./cvGenerator');
+const { runEvaluator }  = require('./evaluator');
 
 const app  = express();
 const PORT = process.env.PORT || 5000;
@@ -51,6 +52,24 @@ app.patch('/api/jobs/:id/status', (req, res) => {
     res.json({ success: true, id: parseInt(req.params.id, 10), status });
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// ─── Evaluator ───────────────────────────────────────────────────────────────
+
+let evalRunning = false;
+
+app.post('/api/evaluate', async (req, res) => {
+  if (evalRunning) return res.status(409).json({ error: 'Evaluation already running' });
+  evalRunning = true;
+  try {
+    const report = await runEvaluator();
+    res.json(report);
+  } catch (err) {
+    console.error('[eval] Failed:', err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    evalRunning = false;
   }
 });
 

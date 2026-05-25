@@ -1,4 +1,4 @@
-export default function StatsBar({ stats, jobs }) {
+export default function StatsBar({ stats, jobs, onEvaluate }) {
   if (!stats) return <div className="stats-bar" />
 
   const saved   = jobs.filter(j => j.status === 'saved').length
@@ -19,6 +19,10 @@ export default function StatsBar({ stats, jobs }) {
         <span className="stat-value">{applied}</span>
         <span className="stat-label">Applied</span>
       </div>
+      <div className="stats-sep" />
+      <button className="btn-evaluate" onClick={onEvaluate}>
+        ✦ Evaluate Scores
+      </button>
     </div>
   )
 }

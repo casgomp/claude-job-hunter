@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import StatsBar from './components/StatsBar'
-import FilterBar from './components/FilterBar'
-import JobTable from './components/JobTable'
-import JobDetail from './components/JobDetail'
+import StatsBar   from './components/StatsBar'
+import FilterBar  from './components/FilterBar'
+import JobTable   from './components/JobTable'
+import JobDetail  from './components/JobDetail'
+import EvalModal  from './components/EvalModal'
 
 const API = 'http://172.31.202.183:5000'
 
@@ -45,6 +46,11 @@ export default function App() {
 
   const [filters, setFilters] = useState({ status: 'all', minScore: 1, workType: 'all' })
   const [sortConfig, setSortConfig] = useState({ key: 'score', dir: 'desc' })
+
+  const [evalModal, setEvalModal] = useState(false)
+  const [evalState, setEvalState] = useState('idle')   // idle | loading | done | error
+  const [evalReport, setEvalReport] = useState(null)
+  const [evalError, setEvalError]   = useState(null)
 
   const fetchJobs = useCallback(async () => {
     const res  = await fetch(`${API}/api/jobs`)
@@ -106,6 +112,21 @@ export default function App() {
     fetchStats()
   }
 
+  const handleEvaluate = async () => {
+    setEvalState('loading')
+    setEvalError(null)
+    try {
+      const res = await fetch(`${API}/api/evaluate`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Evaluation failed')
+      setEvalReport(data)
+      setEvalState('done')
+    } catch (err) {
+      setEvalError(err.message)
+      setEvalState('error')
+    }
+  }
+
   const handleSort = (key) => {
     setSortConfig(prev =>
       prev.key === key
@@ -143,7 +164,7 @@ export default function App() {
             {scraping ? <><span className="spinner" />Running scrape…</> : '↻ Run New Scrape'}
           </button>
         </div>
-        <StatsBar stats={stats} jobs={jobs} />
+        <StatsBar stats={stats} jobs={jobs} onEvaluate={() => { setEvalModal(true); if (evalState === 'idle') handleEvaluate() }} />
       </header>
 
       <FilterBar filters={filters} onChange={setFilters} />
@@ -179,6 +200,15 @@ export default function App() {
           </div>
         )}
       </div>
+      {evalModal && (
+        <EvalModal
+          state={evalState}
+          report={evalReport}
+          error={evalError}
+          onClose={() => setEvalModal(false)}
+          onRun={handleEvaluate}
+        />
+      )}
     </div>
   )
 }
