@@ -1,6 +1,5 @@
 # Logs
 logs
-!backend/logs/evaluation_report.json
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -122,6 +121,13 @@ dist
 
 # Generated CVs
 backend/generated_cvs/
+
+# Personal job search data — not for public repo
+backend/ratings_export.json
+backend/scored_jobs.json
+backend/logs/
+scraper/raw_jobs.json
+scraper/logs/
 
 # Firebase cache directory
 .firebase/
