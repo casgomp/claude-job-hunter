@@ -21,7 +21,7 @@ ${fs.readFileSync(CRITERIA_PATH, 'utf8')}
 </criteria>
 
 Evaluation rules:
-- match_score: integer 1–10 (10 = perfect match for the candidate's profile and goals). Follow the Match Scoring section in the criteria.
+- match_score: integer 1–10 (10 = perfect match for the candidate's profile and goals). Follow the Match Scoring section in the criteria, then apply the hard caps below.
 - reasoning: 2–3 sentences explaining the match score — focus on role fit, eligibility risks, and location.
 - eligibility_flags: array of specific concern strings (e.g. "requires degree", "Werkstudent eligibility uncertain", "requires C1 German", "requires US work authorization", "requires Japanese language"). Empty array if none.
 - highlights: 1–2 sentences on what makes this role specifically interesting for the candidate, or why it scores low.
@@ -29,7 +29,16 @@ Evaluation rules:
 - experience_required: one of exactly: "entry-level", "0-1 years", "1-2 years", "2+ years", or "not specified".
 - contract_type: one of exactly: "internship", "Werkstudent", "full-time", "part-time", "contract", or "not specified".
 
-If the job description is written almost entirely in German (not English or bilingual), score it 1–2 and add "German-only listing" to eligibility_flags.
+Hard caps (apply after initial scoring — take the LOWEST applicable cap):
+- Cap at 3 if the role requires US work authorization, US citizenship, security clearance, or is US-only remote. This applies even if the title says "Junior" or "Remote".
+- Cap at 3 if the listing is written almost entirely in German (not English or bilingual) — also add "German-only listing" to eligibility_flags.
+- Cap at 3 if the role requires German proficiency (B2 or higher, or unspecified "fluent German"), since the candidate's German level is limited.
+- Cap at 3 for jobs located in or restricted to non-target regions (e.g. ANZ, US, Dallas, APAC-only, LATAM-only) regardless of seniority match. Add a specific region flag to eligibility_flags.
+- Cap at 4 if the role description contradicts the title (e.g. "Junior" title but 5+ years required), or if the remote/hybrid scope is unclear or contradictory. Add a flag describing the contradiction.
+
+Consistency rules:
+- For similarly-qualified entry-level roles (same company, same source, comparable seniority and eligibility), small differences in stack familiarity must not produce gaps larger than 1 point. Anchor the score primarily on role level, eligibility, and location fit; treat stack overlap as a secondary modifier.
+- Do not inflate scores above 6 based on stack match alone if eligibility or location fit is weak.
 
 Return ONLY valid JSON with these keys: match_score, reasoning, eligibility_flags, highlights, stack, experience_required, contract_type.
 Do not include markdown fences or any text outside the JSON object.`;

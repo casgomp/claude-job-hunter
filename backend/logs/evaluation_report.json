@@ -1,0 +1,76 @@
+{
+  "overall_quality": "good",
+  "confidence": "high",
+  "summary": "The scoring is largely well-calibrated: US-clearance and senior roles are correctly clustered at 1-2, while legitimate Berlin/remote-EU junior roles are at 6-8. However, a few jobs with US work-authorization flags or German-only listings slipped above the 3-point threshold, and one ANZ-located role was scored too generously.",
+  "issues": [
+    {
+      "job_id": 75,
+      "title": "Junior Backend .Net Engineer",
+      "company": "Metrc",
+      "score": 7,
+      "type": "us_restricted",
+      "description": "Eligibility flags explicitly note 'likely US-only remote (work authorization)' yet scored 7. Other US-work-auth-flagged jobs correctly scored 1-2. Should be ≤3."
+    },
+    {
+      "job_id": 73,
+      "title": "Junior Backend Developer — Java Spring Boot",
+      "company": "Publicis Groupe ANZ",
+      "score": 6,
+      "type": "obvious_error",
+      "description": "Flagged as ANZ (Australia/New Zealand) location with work-authorization/timezone risk and an Italian-language listing. None of these align with Berlin/EU/Japan target; score should be ≤3."
+    },
+    {
+      "job_id": 64,
+      "title": "Werkstudent Software Development – Content & Automation",
+      "company": "VGL Publishing AG",
+      "score": 5,
+      "type": "german_only",
+      "description": "Eligibility flags explicitly list 'German-only listing' and 'likely German-speaking work environment'. Per rules, German-only listings should be ≤3."
+    },
+    {
+      "job_id": 66,
+      "title": "Werkstudent (m/w/d) - Software Development & AI",
+      "company": "PROMOS consult",
+      "score": 5,
+      "type": "german_only",
+      "description": "Flagged as 'German-language listing - likely German proficiency expected' plus stack mismatch (Java vs C/C++). Should be ≤3 given language requirement."
+    },
+    {
+      "job_id": 56,
+      "title": "Junior GenAI Engineer (m/w/d)",
+      "company": "Reply Deutschland SE",
+      "score": 5,
+      "type": "german_only",
+      "description": "Flagged 'likely requires German proficiency' plus skill mismatch (GenAI/ML outside candidate's strong areas). Borderline but probably should be 3-4 not 5."
+    },
+    {
+      "job_id": 60,
+      "title": "Junior Node.js Engineer",
+      "company": "OfferZen",
+      "score": 7,
+      "type": "inconsistency",
+      "description": "Scored 7 with '1-2 years experience required', but Job 42 (also OfferZen, Junior .NET, also '0-1 years experience') scored only 5. Both have similar profiles; 2-point gap with no clear justification beyond stack familiarity."
+    },
+    {
+      "job_id": 72,
+      "title": "Junior Backend Developer (AI & LLM Focus)",
+      "company": "Advision Development",
+      "score": 5,
+      "type": "obvious_error",
+      "description": "Flags note 'role description contradicts title (frontend, not backend)' and 'remote location/work authorization not specified' plus 1-2 yr experience. Should be lower given the description-title mismatch and unclear remote eligibility."
+    }
+  ],
+  "recommendations": [
+    "Enforce a hard cap of 3 for any job with eligibility flags mentioning 'US work authorization', 'US citizenship', 'security clearance', or 'US-only remote'—even if the title says 'Junior' or 'Remote'.",
+    "Enforce a hard cap of 3 for any listing explicitly flagged as 'German-only listing' or requiring German proficiency, since the candidate's German level is unspecified/limited.",
+    "Add a geographic eligibility check: jobs flagged with non-target regions (ANZ, US, Dallas, etc.) should be capped at 3 regardless of seniority match.",
+    "Improve consistency between similarly-qualified entry-level roles from the same company/source—small stack-familiarity differences should not produce 2+ point gaps.",
+    "When a flag notes 'role description contradicts title' or unclear remote scope, treat as a strong negative signal and cap at 4."
+  ],
+  "generated_at": "2026-05-25T20:18:33.603Z",
+  "jobs_evaluated": 90,
+  "prompt_update": {
+    "previous_rules": "Evaluation rules:\n- match_score: integer 1–10 (10 = perfect match for the candidate's profile and goals). Follow the Match Scoring section in the criteria.\n- reasoning: 2–3 sentences explaining the match score — focus on role fit, eligibility risks, and location.\n- eligibility_flags: array of specific concern strings (e.g. \"requires degree\", \"Werkstudent eligibility uncertain\", \"requires C1 German\", \"requires US work authorization\", \"requires Japanese language\"). Empty array if none.\n- highlights: 1–2 sentences on what makes this role specifically interesting for the candidate, or why it scores low.\n- stack: array of programming languages, frameworks, and tools explicitly mentioned in the posting (e.g. [\"Python\", \"Django\", \"PostgreSQL\"]). Empty array if none specified.\n- experience_required: one of exactly: \"entry-level\", \"0-1 years\", \"1-2 years\", \"2+ years\", or \"not specified\".\n- contract_type: one of exactly: \"internship\", \"Werkstudent\", \"full-time\", \"part-time\", \"contract\", or \"not specified\".\n\nIf the job description is written almost entirely in German (not English or bilingual), score it 1–2 and add \"German-only listing\" to eligibility_flags.\n\nReturn ONLY valid JSON with these keys: match_score, reasoning, eligibility_flags, highlights, stack, experience_required, contract_type.\nDo not include markdown fences or any text outside the JSON object.",
+    "updated_rules": "Evaluation rules:\n- match_score: integer 1–10 (10 = perfect match for the candidate's profile and goals). Follow the Match Scoring section in the criteria, then apply the hard caps below.\n- reasoning: 2–3 sentences explaining the match score — focus on role fit, eligibility risks, and location.\n- eligibility_flags: array of specific concern strings (e.g. \"requires degree\", \"Werkstudent eligibility uncertain\", \"requires C1 German\", \"requires US work authorization\", \"requires Japanese language\"). Empty array if none.\n- highlights: 1–2 sentences on what makes this role specifically interesting for the candidate, or why it scores low.\n- stack: array of programming languages, frameworks, and tools explicitly mentioned in the posting (e.g. [\"Python\", \"Django\", \"PostgreSQL\"]). Empty array if none specified.\n- experience_required: one of exactly: \"entry-level\", \"0-1 years\", \"1-2 years\", \"2+ years\", or \"not specified\".\n- contract_type: one of exactly: \"internship\", \"Werkstudent\", \"full-time\", \"part-time\", \"contract\", or \"not specified\".\n\nHard caps (apply after initial scoring — take the LOWEST applicable cap):\n- Cap at 3 if the role requires US work authorization, US citizenship, security clearance, or is US-only remote. This applies even if the title says \"Junior\" or \"Remote\".\n- Cap at 3 if the listing is written almost entirely in German (not English or bilingual) — also add \"German-only listing\" to eligibility_flags.\n- Cap at 3 if the role requires German proficiency (B2 or higher, or unspecified \"fluent German\"), since the candidate's German level is limited.\n- Cap at 3 for jobs located in or restricted to non-target regions (e.g. ANZ, US, Dallas, APAC-only, LATAM-only) regardless of seniority match. Add a specific region flag to eligibility_flags.\n- Cap at 4 if the role description contradicts the title (e.g. \"Junior\" title but 5+ years required), or if the remote/hybrid scope is unclear or contradictory. Add a flag describing the contradiction.\n\nConsistency rules:\n- For similarly-qualified entry-level roles (same company, same source, comparable seniority and eligibility), small differences in stack familiarity must not produce gaps larger than 1 point. Anchor the score primarily on role level, eligibility, and location fit; treat stack overlap as a secondary modifier.\n- Do not inflate scores above 6 based on stack match alone if eligibility or location fit is weak.\n\nReturn ONLY valid JSON with these keys: match_score, reasoning, eligibility_flags, highlights, stack, experience_required, contract_type.\nDo not include markdown fences or any text outside the JSON object."
+  }
+}

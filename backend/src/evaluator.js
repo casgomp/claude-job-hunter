@@ -5,11 +5,16 @@ const path      = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 const { getJobs } = require('./database');
 
-const LOG_DIR  = path.join(__dirname, '../logs');
-const OUT_PATH = path.join(LOG_DIR, 'evaluation_report.json');
-const MODEL    = 'claude-opus-4-7';
+const LOG_DIR     = path.join(__dirname, '../logs');
+const OUT_PATH    = path.join(LOG_DIR, 'evaluation_report.json');
+const SCORER_PATH = path.join(__dirname, 'scorer.js');
+const MODEL       = 'claude-opus-4-7';
 
-const SYSTEM_PROMPT = `You are a critical reviewer auditing the output of an automated job-scoring pipeline. The pipeline scores job listings 1–10 for a specific candidate (junior software engineering student, based in Berlin, studying at 42 Berlin, looking for entry-level/Werkstudent/internship roles in Berlin or remote Europe/Japan).
+// Boundary that separates the static preamble (criteria embed) from the
+// rewriteable rules section inside scorer.js's SYSTEM_PROMPT template literal.
+const RULES_BOUNDARY = '</criteria>\n\n';
+
+const EVAL_SYSTEM_PROMPT = `You are a critical reviewer auditing the output of an automated job-scoring pipeline. The pipeline scores job listings 1–10 for a specific candidate (junior software engineering student, based in Berlin, studying at 42 Berlin, looking for entry-level/Werkstudent/internship roles in Berlin or remote Europe/Japan).
 
 You will receive a JSON list of scored jobs. Each job has: id, title, company, score, source, work_type, country, experience_required, contract_type, eligibility_flags.
 
@@ -37,16 +42,23 @@ Return a JSON object with exactly these keys:
 
 Return ONLY valid JSON. No markdown fences, no commentary outside the JSON.`;
 
-async function runEvaluator() {
-  const apiKey = process.env.CLAUDE_API_KEY;
-  if (!apiKey) throw new Error('CLAUDE_API_KEY not set in .env');
+const IMPROVE_SYSTEM_PROMPT = `You are improving the rules section of an automated job-scoring prompt. You will receive:
+1. The current rules section (the text that appears after the candidate criteria document)
+2. A list of specific recommendations from a quality evaluation of recent scoring output
 
-  const jobs = getJobs();
-  if (jobs.length === 0) throw new Error('No jobs in database to evaluate');
+Your task: return an improved version of the rules section that incorporates the recommendations.
 
-  console.log(`[eval] Evaluating ${jobs.length} scored jobs...`);
+Rules for your response:
+- Keep all existing rules that are working correctly
+- Add, sharpen, or reorder rules to address the recommendations
+- Do not alter or remove the output format instructions (the JSON keys section at the end)
+- Do not add rules that contradict well-functioning existing behaviour
+- Return ONLY the improved rules text — no preamble, no commentary, no code fences
+- The text you return will be inserted directly into a JavaScript template literal, so do not include backtick characters`;
 
-  // Compact representation — only the fields needed for evaluation
+// ── Evaluation ──────────────────────────────────────────────────────────────
+
+async function evaluate(client, jobs) {
   const compact = jobs.map(j => ({
     id:                  j.id,
     title:               j.title,
@@ -60,30 +72,99 @@ async function runEvaluator() {
     eligibility_flags:   j.eligibility_flags,
   }));
 
-  const client = new Anthropic({ apiKey });
-
   const response = await client.messages.create({
     model:      MODEL,
     max_tokens: 3000,
     thinking:   { type: 'adaptive' },
-    system: [
-      { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
-    ],
-    messages: [
-      {
-        role:    'user',
-        content: `Here are the ${jobs.length} scored jobs to evaluate:\n\n${JSON.stringify(compact, null, 2)}`,
-      },
-    ],
+    system: [{ type: 'text', text: EVAL_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+    messages: [{
+      role:    'user',
+      content: `Here are the ${jobs.length} scored jobs to evaluate:\n\n${JSON.stringify(compact, null, 2)}`,
+    }],
   });
 
   const textBlock = response.content.find(b => b.type === 'text');
-  if (!textBlock) throw new Error('No text block in Claude response');
+  if (!textBlock) throw new Error('No text block in evaluation response');
+  const raw = textBlock.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  return JSON.parse(raw);
+}
 
-  const report = JSON.parse(textBlock.text.trim());
-  report.generated_at = new Date().toISOString();
+// ── Prompt improvement ──────────────────────────────────────────────────────
+
+function extractCurrentRules() {
+  const scorerContent = fs.readFileSync(SCORER_PATH, 'utf8');
+  const boundaryIdx   = scorerContent.indexOf(RULES_BOUNDARY);
+  if (boundaryIdx === -1) throw new Error(`Cannot find "${RULES_BOUNDARY}" marker in scorer.js`);
+
+  const rulesStart    = boundaryIdx + RULES_BOUNDARY.length;
+  const closingIdx    = scorerContent.indexOf('`;\n', rulesStart);
+  if (closingIdx === -1) throw new Error('Cannot find closing backtick of SYSTEM_PROMPT in scorer.js');
+
+  return {
+    rules:         scorerContent.slice(rulesStart, closingIdx),
+    scorerContent,
+    rulesStart,
+    closingIdx,
+  };
+}
+
+async function improvePrompt(client, currentRules, recommendations) {
+  const recText = recommendations.map((r, i) => `${i + 1}. ${r}`).join('\n');
+
+  const response = await client.messages.create({
+    model:      MODEL,
+    max_tokens: 3000,
+    system:     IMPROVE_SYSTEM_PROMPT,
+    messages: [{
+      role:    'user',
+      content: `Current rules section:\n\n${currentRules}\n\n---\n\nRecommendations from evaluation:\n${recText}\n\nReturn the improved rules section.`,
+    }],
+  });
+
+  const textBlock = response.content.find(b => b.type === 'text');
+  if (!textBlock) throw new Error('No text block in improvement response');
+  return textBlock.text.trim();
+}
+
+function writeImprovedPrompt(scorerContent, rulesStart, closingIdx, newRules) {
+  // Escape backticks so they're safe inside the template literal
+  const escaped    = newRules.replace(/`/g, '\\`');
+  const newContent = scorerContent.slice(0, rulesStart) + escaped + scorerContent.slice(closingIdx);
+  fs.writeFileSync(SCORER_PATH, newContent);
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+
+async function runEvaluator() {
+  const apiKey = process.env.CLAUDE_API_KEY;
+  if (!apiKey) throw new Error('CLAUDE_API_KEY not set in .env');
+
+  const jobs = getJobs();
+  if (jobs.length === 0) throw new Error('No jobs in database to evaluate');
+
+  const client = new Anthropic({ apiKey });
+
+  // Step 1: evaluate
+  console.log(`[eval] Evaluating ${jobs.length} scored jobs...`);
+  const report = await evaluate(client, jobs);
+  report.generated_at   = new Date().toISOString();
   report.jobs_evaluated = jobs.length;
 
+  // Step 2: improve scorer prompt
+  console.log('[eval] Improving scoring prompt...');
+  const { rules: previousRules, scorerContent, rulesStart, closingIdx } = extractCurrentRules();
+
+  const updatedRules = await improvePrompt(client, previousRules, report.recommendations);
+  writeImprovedPrompt(scorerContent, rulesStart, closingIdx, updatedRules);
+  console.log('[eval] scorer.js updated.');
+
+  // Step 3: attach diff to report
+  report.prompt_update = {
+    previous_rules: previousRules,
+    updated_rules:  updatedRules,
+  };
+
+  // Step 4: save report
   fs.mkdirSync(LOG_DIR, { recursive: true });
   fs.writeFileSync(OUT_PATH, JSON.stringify(report, null, 2));
   console.log(`[eval] Report saved to ${OUT_PATH}`);
@@ -96,7 +177,7 @@ if (require.main === module) {
     .then(report => {
       console.log(`\nOverall quality: ${report.overall_quality.toUpperCase()}  (confidence: ${report.confidence})`);
       console.log(`Summary: ${report.summary}`);
-      if (report.issues.length) {
+      if (report.issues?.length) {
         console.log(`\nIssues found (${report.issues.length}):`);
         report.issues.forEach(i =>
           console.log(`  [${i.type}] (${i.score}/10) ${i.title} @ ${i.company} — ${i.description}`)
@@ -104,10 +185,11 @@ if (require.main === module) {
       } else {
         console.log('\nNo issues found.');
       }
-      if (report.recommendations.length) {
-        console.log('\nRecommendations:');
+      if (report.recommendations?.length) {
+        console.log('\nRecommendations applied to scorer.js:');
         report.recommendations.forEach(r => console.log(`  - ${r}`));
       }
+      console.log('\n--- Updated rules section written to scorer.js ---');
     })
     .catch(err => {
       console.error('Fatal:', err.message);
