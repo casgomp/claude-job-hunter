@@ -8,7 +8,7 @@ const { execFile } = require('child_process');
 
 const {
   getJobs, getJobById, updateJobStatus, updateCvGenerated,
-  insertJob, insertRun, getRuns,
+  upsertRating, insertJob, insertRun, getRuns,
 } = require('./database');
 const { generateCv }    = require('./cvGenerator');
 const { runEvaluator }  = require('./evaluator');
@@ -41,6 +41,24 @@ app.get('/api/jobs/:id', (req, res) => {
   const job = getJobById(parseInt(req.params.id, 10));
   if (!job) return res.status(404).json({ error: 'Job not found' });
   res.json(job);
+});
+
+app.patch('/api/jobs/:id/rating', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { eligibility, technical_fit, interest_level, notes } = req.body;
+  const validElig = ['Yes', 'Maybe', 'No'];
+  if (eligibility && !validElig.includes(eligibility))
+    return res.status(400).json({ error: `eligibility must be one of: ${validElig.join(', ')}` });
+  if (technical_fit  != null && (technical_fit  < 1 || technical_fit  > 5))
+    return res.status(400).json({ error: 'technical_fit must be 1–5' });
+  if (interest_level != null && (interest_level < 1 || interest_level > 5))
+    return res.status(400).json({ error: 'interest_level must be 1–5' });
+  try {
+    upsertRating(id, { eligibility, technical_fit, interest_level, notes });
+    res.json({ success: true, id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.patch('/api/jobs/:id/status', (req, res) => {

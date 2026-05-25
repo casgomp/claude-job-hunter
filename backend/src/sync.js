@@ -2,7 +2,7 @@ const fs   = require('fs');
 const path = require('path');
 
 const {
-  getDb, insertJob, updateJobScoring, jobExistsByUrl,
+  getDb, insertJob, updateJobScoring, importRatingsFromFile,
 } = require('./database');
 
 const SCORED_JOBS_PATH = path.join(__dirname, '../scored_jobs.json');
@@ -13,6 +13,7 @@ function run() {
     process.exit(1);
   }
 
+  // ── Sync jobs ───────────────────────────────────────────────────────────────
   const jobs = JSON.parse(fs.readFileSync(SCORED_JOBS_PATH, 'utf8'));
   console.log(`=== Sync: ${jobs.length} jobs in scored_jobs.json ===\n`);
 
@@ -50,7 +51,17 @@ function run() {
     }
   }
 
-  console.log(`\n=== Done: ${inserted} inserted, ${updated} updated, ${skipped} unchanged ===`);
+  console.log(`\n  Jobs: ${inserted} inserted, ${updated} updated, ${skipped} unchanged`);
+
+  // ── Sync ratings ────────────────────────────────────────────────────────────
+  const { imported: ri, skipped: rs } = importRatingsFromFile();
+  if (ri > 0 || rs > 0) {
+    console.log(`  Ratings: ${ri} imported, ${rs} skipped (job not found locally)`);
+  } else {
+    console.log('  Ratings: no ratings_export.json found, skipping');
+  }
+
+  console.log('\n=== Sync complete ===');
 }
 
 run();

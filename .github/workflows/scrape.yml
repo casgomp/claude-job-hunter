@@ -49,11 +49,16 @@ jobs:
         working-directory: backend
         run: node src/scorer.js
 
+      - name: Run evaluator (improve scoring prompt)
+        working-directory: backend
+        run: node src/evaluator.js
+
       - name: Commit updated job files
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add scraper/raw_jobs.json backend/scored_jobs.json
+          git add scraper/raw_jobs.json backend/scored_jobs.json \
+                  backend/src/scorer.js backend/logs/evaluation_report.json
           git diff --staged --quiet && echo "No changes to commit" && exit 0
-          git commit -m "chore: update job listings [$(date -u +'%Y-%m-%d')]"
+          git commit -m "chore: update jobs + improve scorer [$(date -u +'%Y-%m-%d')]"
           git push

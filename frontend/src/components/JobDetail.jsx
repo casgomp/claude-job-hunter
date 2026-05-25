@@ -8,6 +8,110 @@ function formatDate(iso) {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+function Stars({ value, onChange }) {
+  const [hovered, setHovered] = useState(null)
+  const display = hovered ?? value ?? 0
+  return (
+    <div className="star-input">
+      {[1, 2, 3, 4, 5].map(n => (
+        <button
+          key={n}
+          className={`star-btn ${n <= display ? 'lit' : ''}`}
+          onMouseEnter={() => setHovered(n)}
+          onMouseLeave={() => setHovered(null)}
+          onClick={() => onChange(value === n ? null : n)}
+        >★</button>
+      ))}
+    </div>
+  )
+}
+
+function RatingForm({ job, onSaved }) {
+  const existing = job.rating
+  const [eligibility,   setEligibility]   = useState(existing?.eligibility   ?? '')
+  const [technicalFit,  setTechnicalFit]  = useState(existing?.technical_fit  ?? null)
+  const [interestLevel, setInterestLevel] = useState(existing?.interest_level ?? null)
+  const [notes,         setNotes]         = useState(existing?.notes          ?? '')
+  const [saving,        setSaving]        = useState(false)
+  const [saved,         setSaved]         = useState(false)
+
+  const isDirty = eligibility  !== (existing?.eligibility   ?? '')   ||
+                  technicalFit  !== (existing?.technical_fit  ?? null) ||
+                  interestLevel !== (existing?.interest_level ?? null) ||
+                  notes         !== (existing?.notes          ?? '')
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch(`${API}/api/jobs/${job.id}/rating`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          eligibility:   eligibility   || null,
+          technical_fit: technicalFit,
+          interest_level:interestLevel,
+          notes:         notes         || null,
+        }),
+      })
+      if (!res.ok) throw new Error('Save failed')
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+      onSaved?.({ eligibility, technical_fit: technicalFit, interest_level: interestLevel, notes })
+    } catch (err) {
+      console.error('[rating]', err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="rating-form">
+      <div className="rating-row">
+        <label className="rating-label">Eligibility</label>
+        <select
+          className="rating-select"
+          value={eligibility}
+          onChange={e => setEligibility(e.target.value)}
+        >
+          <option value="">—</option>
+          <option value="Yes">Yes</option>
+          <option value="Maybe">Maybe</option>
+          <option value="No">No</option>
+        </select>
+      </div>
+
+      <div className="rating-row">
+        <label className="rating-label">Tech fit</label>
+        <Stars value={technicalFit} onChange={setTechnicalFit} />
+      </div>
+
+      <div className="rating-row">
+        <label className="rating-label">Interest</label>
+        <Stars value={interestLevel} onChange={setInterestLevel} />
+      </div>
+
+      <div className="rating-row rating-notes-row">
+        <label className="rating-label">Notes</label>
+        <input
+          className="rating-notes"
+          type="text"
+          placeholder="Optional notes…"
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+        />
+      </div>
+
+      <button
+        className={`action-btn rating-save-btn ${saved ? 'is-saved' : ''}`}
+        onClick={handleSave}
+        disabled={saving || !isDirty}
+      >
+        {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save rating'}
+      </button>
+    </div>
+  )
+}
+
 export default function JobDetail({ job, onClose, onStatusUpdate }) {
   const city    = parseCity(job.location, job.work_type)
   const country = parseCountry(job.location, job.country)
@@ -111,6 +215,11 @@ export default function JobDetail({ job, onClose, onStatusUpdate }) {
             </div>
           </div>
         )}
+
+        <div className="detail-section">
+          <h4>Your Rating</h4>
+          <RatingForm job={job} />
+        </div>
 
         {job.url && (
           <div className="detail-section">

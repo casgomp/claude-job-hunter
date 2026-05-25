@@ -461,6 +461,34 @@ h1, h2, h3, h4 { font-weight: 600; color: var(--text-bright); margin: 0; }
 .cv-loading { font-size: 11px; color: #fbbf24; opacity: 0.8; animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
 
+/* ── Rating form ───────────────────────────────────────────── */
+.rating-form { display: flex; flex-direction: column; gap: 7px; }
+.rating-row  { display: flex; align-items: center; gap: 10px; }
+.rating-label { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; width: 56px; flex-shrink: 0; }
+.rating-select {
+  font-size: 11px; background: var(--card); border: 1px solid var(--border);
+  color: var(--text); border-radius: 4px; padding: 3px 6px; cursor: pointer;
+}
+.star-input { display: flex; gap: 2px; }
+.star-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: 16px; color: var(--border); padding: 0 1px;
+  transition: color 0.1s, transform 0.1s;
+  line-height: 1;
+}
+.star-btn.lit { color: #f59e0b; }
+.star-btn:hover { transform: scale(1.15); }
+.rating-notes-row { align-items: center; }
+.rating-notes {
+  flex: 1; font-size: 11px; background: var(--card); border: 1px solid var(--border);
+  color: var(--text); border-radius: 4px; padding: 4px 8px;
+}
+.rating-notes:focus { outline: none; border-color: var(--accent); }
+.rating-save-btn { align-self: flex-start; background: rgba(99,102,241,0.08); border-color: rgba(99,102,241,0.3); color: var(--accent); }
+.rating-save-btn:hover:not(:disabled) { background: rgba(99,102,241,0.18); }
+.rating-save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.rating-save-btn.is-saved { color: var(--score-high); border-color: var(--score-high); background: rgba(16,185,129,0.08); }
+
 /* ── Evaluate button ───────────────────────────────────────── */
 .btn-evaluate {
   margin-left: auto;

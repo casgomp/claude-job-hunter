@@ -2,7 +2,8 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const DB_PATH = path.join(__dirname, '../../backend/data/jobs.db');
+const DB_PATH          = path.join(__dirname, '../../backend/data/jobs.db');
+const RATINGS_EXPORT   = path.join(__dirname, '../ratings_export.json');
 
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
@@ -53,24 +54,58 @@ function initSchema() {
       tokens_used  INTEGER
     );
 
+    CREATE TABLE IF NOT EXISTS ratings (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id         INTEGER NOT NULL UNIQUE REFERENCES jobs(id) ON DELETE CASCADE,
+      eligibility    TEXT CHECK(eligibility IN ('Yes','Maybe','No')),
+      technical_fit  INTEGER CHECK(technical_fit BETWEEN 1 AND 5),
+      interest_level INTEGER CHECK(interest_level BETWEEN 1 AND 5),
+      notes          TEXT,
+      rated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_jobs_status   ON jobs(status);
     CREATE INDEX IF NOT EXISTS idx_jobs_score    ON jobs(score);
     CREATE INDEX IF NOT EXISTS idx_jobs_url      ON jobs(url);
     CREATE INDEX IF NOT EXISTS idx_jobs_country  ON jobs(country);
+    CREATE INDEX IF NOT EXISTS idx_ratings_job   ON ratings(job_id);
   `);
 }
 
+const JOBS_WITH_RATINGS_SQL = `
+  SELECT j.*,
+    r.eligibility    AS rating_eligibility,
+    r.technical_fit  AS rating_technical_fit,
+    r.interest_level AS rating_interest_level,
+    r.notes          AS rating_notes,
+    r.rated_at       AS rating_rated_at
+  FROM jobs j
+  LEFT JOIN ratings r ON r.job_id = j.id
+`;
+
 function serializeJob(row) {
   if (!row) return null;
-  return {
+  const job = {
     ...row,
     eligibility_flags: row.eligibility_flags ? JSON.parse(row.eligibility_flags) : [],
     stack:             row.stack             ? JSON.parse(row.stack)             : [],
     cv_generated:      Boolean(row.cv_generated),
+    rating: row.rating_rated_at ? {
+      eligibility:    row.rating_eligibility,
+      technical_fit:  row.rating_technical_fit,
+      interest_level: row.rating_interest_level,
+      notes:          row.rating_notes,
+      rated_at:       row.rating_rated_at,
+    } : null,
   };
+  delete job.rating_eligibility;
+  delete job.rating_technical_fit;
+  delete job.rating_interest_level;
+  delete job.rating_notes;
+  delete job.rating_rated_at;
+  return job;
 }
 
-// Insert a new job. Returns the inserted row id, or null if URL already exists.
 function insertJob(job) {
   const d = getDb();
   const stmt = d.prepare(`
@@ -94,7 +129,6 @@ function insertJob(job) {
     source:              job.source              ?? null,
     work_type:           job._work_type          ?? job.work_type ?? null,
     country:             job._country            ?? job.country   ?? null,
-    // support both old (score) and new (match_score) scorer output formats
     score:               job.match_score         ?? job.score     ?? null,
     reasoning:           job.reasoning           ?? null,
     eligibility_flags:   Array.isArray(job.eligibility_flags)
@@ -151,19 +185,94 @@ function updateJobStatus(id, status) {
     .run(status, id).changes;
 }
 
+// ── Ratings ──────────────────────────────────────────────────────────────────
+
+function upsertRating(jobId, { eligibility, technical_fit, interest_level, notes }) {
+  const d = getDb();
+  d.prepare(`
+    INSERT INTO ratings (job_id, eligibility, technical_fit, interest_level, notes, rated_at)
+    VALUES (@job_id, @eligibility, @technical_fit, @interest_level, @notes, datetime('now'))
+    ON CONFLICT(job_id) DO UPDATE SET
+      eligibility    = excluded.eligibility,
+      technical_fit  = excluded.technical_fit,
+      interest_level = excluded.interest_level,
+      notes          = excluded.notes,
+      rated_at       = datetime('now')
+  `).run({ job_id: jobId, eligibility, technical_fit, interest_level, notes: notes ?? null });
+  _writeRatingsExport();
+}
+
+function getRatings() {
+  return getDb().prepare('SELECT * FROM ratings').all();
+}
+
+// Write ratings_export.json keyed by job URL for cross-machine sync
+function _writeRatingsExport() {
+  const d = getDb();
+  const rows = d.prepare(`
+    SELECT r.*, j.url AS job_url
+    FROM ratings r JOIN jobs j ON j.id = r.job_id
+  `).all();
+  const exportData = rows.map(r => ({
+    job_url:       r.job_url,
+    eligibility:   r.eligibility,
+    technical_fit: r.technical_fit,
+    interest_level:r.interest_level,
+    notes:         r.notes,
+    rated_at:      r.rated_at,
+  }));
+  fs.writeFileSync(RATINGS_EXPORT, JSON.stringify(exportData, null, 2));
+}
+
+// Import ratings from ratings_export.json; matches jobs by URL
+function importRatingsFromFile() {
+  if (!fs.existsSync(RATINGS_EXPORT)) return { imported: 0, skipped: 0 };
+  const ratings = JSON.parse(fs.readFileSync(RATINGS_EXPORT, 'utf8'));
+  const d = getDb();
+  let imported = 0, skipped = 0;
+  for (const r of ratings) {
+    if (!r.job_url) { skipped++; continue; }
+    const job = d.prepare('SELECT id FROM jobs WHERE url = ?').get(r.job_url);
+    if (!job) { skipped++; continue; }
+    d.prepare(`
+      INSERT INTO ratings (job_id, eligibility, technical_fit, interest_level, notes, rated_at)
+      VALUES (@job_id, @eligibility, @technical_fit, @interest_level, @notes, @rated_at)
+      ON CONFLICT(job_id) DO UPDATE SET
+        eligibility    = excluded.eligibility,
+        technical_fit  = excluded.technical_fit,
+        interest_level = excluded.interest_level,
+        notes          = excluded.notes,
+        rated_at       = excluded.rated_at
+    `).run({
+      job_id:        job.id,
+      eligibility:   r.eligibility   ?? null,
+      technical_fit: r.technical_fit ?? null,
+      interest_level:r.interest_level?? null,
+      notes:         r.notes         ?? null,
+      rated_at:      r.rated_at      ?? new Date().toISOString(),
+    });
+    imported++;
+  }
+  return { imported, skipped };
+}
+
+// ── Queries ───────────────────────────────────────────────────────────────────
+
 function getJobs({ status } = {}) {
   const d = getDb();
-  const conditions = [];
-  const params = [];
-  if (status !== undefined) { conditions.push('status = ?'); params.push(status); }
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  return d.prepare(`SELECT * FROM jobs ${where} ORDER BY score DESC NULLS LAST, created_at DESC`)
-    .all(...params)
-    .map(serializeJob);
+  const where  = status ? 'WHERE j.status = ?' : '';
+  const params = status ? [status] : [];
+  return d.prepare(`
+    ${JOBS_WITH_RATINGS_SQL}
+    ${where}
+    ORDER BY j.score DESC NULLS LAST, j.created_at DESC
+  `).all(...params).map(serializeJob);
 }
 
 function getJobById(id) {
-  return serializeJob(getDb().prepare('SELECT * FROM jobs WHERE id = ?').get(id));
+  return serializeJob(
+    getDb().prepare(`${JOBS_WITH_RATINGS_SQL} WHERE j.id = ?`).get(id)
+  );
 }
 
 function jobExistsByUrl(url) {
@@ -182,6 +291,9 @@ function getRuns() {
 }
 
 module.exports = {
-  getDb, insertJob, updateJobStatus, updateJobScoring, updateCvGenerated,
-  getJobs, getJobById, jobExistsByUrl, insertRun, getRuns,
+  getDb,
+  insertJob, updateJobStatus, updateJobScoring, updateCvGenerated,
+  upsertRating, getRatings, importRatingsFromFile,
+  getJobs, getJobById, jobExistsByUrl,
+  insertRun, getRuns,
 };

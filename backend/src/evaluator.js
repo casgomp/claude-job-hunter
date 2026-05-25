@@ -3,7 +3,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '../../.env') }
 const fs        = require('fs');
 const path      = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
-const { getJobs } = require('./database');
+const { getJobs, getRatings } = require('./database');
 
 const LOG_DIR     = path.join(__dirname, '../logs');
 const OUT_PATH    = path.join(LOG_DIR, 'evaluation_report.json');
@@ -56,9 +56,37 @@ Rules for your response:
 - Return ONLY the improved rules text — no preamble, no commentary, no code fences
 - The text you return will be inserted directly into a JavaScript template literal, so do not include backtick characters`;
 
+// ── Rating gap analysis ──────────────────────────────────────────────────────
+
+// human_score maps (technical_fit 1-5) + (interest_level 1-5) onto a 2-10 scale
+// matching Claude's 1-10. Gap > 2 is flagged.
+function computeRatingGaps(jobs) {
+  const gaps = [];
+  for (const job of jobs) {
+    const r = job.rating;
+    if (!r || r.technical_fit == null || r.interest_level == null) continue;
+    if (job.score == null) continue;
+    const humanScore = r.technical_fit + r.interest_level;   // 2–10
+    const gap        = Math.abs(job.score - humanScore);
+    if (gap > 2) {
+      gaps.push({
+        job_id:       job.id,
+        title:        job.title,
+        company:      job.company,
+        claude_score: job.score,
+        human_score:  humanScore,
+        gap,
+        eligibility:  r.eligibility,
+        notes:        r.notes,
+      });
+    }
+  }
+  return gaps.sort((a, b) => b.gap - a.gap);
+}
+
 // ── Evaluation ──────────────────────────────────────────────────────────────
 
-async function evaluate(client, jobs) {
+async function evaluate(client, jobs, ratingGaps) {
   const compact = jobs.map(j => ({
     id:                  j.id,
     title:               j.title,
@@ -70,7 +98,16 @@ async function evaluate(client, jobs) {
     experience_required: j.experience_required,
     contract_type:       j.contract_type,
     eligibility_flags:   j.eligibility_flags,
+    human_rating:        j.rating ? {
+      eligibility:    j.rating.eligibility,
+      technical_fit:  j.rating.technical_fit,
+      interest_level: j.rating.interest_level,
+    } : null,
   }));
+
+  const gapSection = ratingGaps.length > 0
+    ? `\n\nMANUAL RATING GAPS (treat these as primary feedback — these are jobs where a human reviewer's score differs from Claude's by more than 2 points on a 1–10 scale):\n${JSON.stringify(ratingGaps, null, 2)}`
+    : '\n\n(No manual rating gaps to report — no jobs have been rated yet.)';
 
   const response = await client.messages.create({
     model:      MODEL,
@@ -79,7 +116,7 @@ async function evaluate(client, jobs) {
     system: [{ type: 'text', text: EVAL_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
     messages: [{
       role:    'user',
-      content: `Here are the ${jobs.length} scored jobs to evaluate:\n\n${JSON.stringify(compact, null, 2)}`,
+      content: `Here are the ${jobs.length} scored jobs to evaluate:\n\n${JSON.stringify(compact, null, 2)}${gapSection}`,
     }],
   });
 
@@ -144,11 +181,23 @@ async function runEvaluator() {
 
   const client = new Anthropic({ apiKey });
 
-  // Step 1: evaluate
+  // Step 1: compute rating gaps (primary feedback signal)
+  const ratingGaps = computeRatingGaps(jobs);
+  if (ratingGaps.length > 0) {
+    console.log(`[eval] ${ratingGaps.length} manual rating gap(s) found — using as primary feedback`);
+    ratingGaps.forEach(g =>
+      console.log(`  gap ${g.gap}pt: "${g.title}" @ ${g.company} — Claude ${g.claude_score}/10 vs human ${g.human_score}/10`)
+    );
+  } else {
+    console.log('[eval] No manual ratings yet — proceeding with pattern-only evaluation');
+  }
+
+  // Step 2: evaluate
   console.log(`[eval] Evaluating ${jobs.length} scored jobs...`);
-  const report = await evaluate(client, jobs);
+  const report = await evaluate(client, jobs, ratingGaps);
   report.generated_at   = new Date().toISOString();
   report.jobs_evaluated = jobs.length;
+  report.rating_gaps    = ratingGaps;
 
   // Step 2: improve scorer prompt
   console.log('[eval] Improving scoring prompt...');
