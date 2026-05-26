@@ -53,6 +53,32 @@ function run() {
 
   console.log(`\n  Jobs: ${inserted} inserted, ${updated} updated, ${skipped} unchanged`);
 
+  // ── Remove stale jobs ───────────────────────────────────────────────────────
+  // Any job in the DB whose URL is not in scored_jobs.json was excluded by the
+  // scraper filters — delete it to keep the DB in sync.
+  const currentUrls = new Set(jobs.filter(j => j.url).map(j => j.url));
+  const dbJobs      = db.prepare('SELECT id, title, company, score, url FROM jobs').all();
+  const stale       = dbJobs.filter(j => !currentUrls.has(j.url));
+
+  if (stale.length > 0) {
+    // Warn if any stale jobs have ratings (ratings are cascade-deleted with the job)
+    const staleWithRatings = stale.filter(j =>
+      db.prepare('SELECT 1 FROM ratings WHERE job_id = ?').get(j.id)
+    );
+    if (staleWithRatings.length > 0) {
+      console.warn(`\n  WARNING: ${staleWithRatings.length} stale job(s) have ratings that will be deleted:`);
+      staleWithRatings.forEach(j => console.warn(`    ⚠ ${j.title} @ ${j.company}`));
+    }
+
+    console.log(`\n  Removing ${stale.length} stale job(s) no longer in scored_jobs.json:`);
+    const del = db.prepare('DELETE FROM jobs WHERE id = ?');
+    const deleteAll = db.transaction(() => stale.forEach(j => del.run(j.id)));
+    deleteAll();
+    stale.forEach(j => console.log(`  - removed   (${j.score ?? '?'}/10)  ${j.title} @ ${j.company}`));
+  } else {
+    console.log('  No stale jobs to remove.');
+  }
+
   // ── Sync ratings ────────────────────────────────────────────────────────────
   const { imported: ri, skipped: rs } = importRatingsFromFile();
   if (ri > 0 || rs > 0) {
