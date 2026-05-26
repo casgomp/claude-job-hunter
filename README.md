@@ -4,6 +4,8 @@ An AI-powered job hunting pipeline. It scrapes listings from multiple sources, s
 
 Built using an agentic development workflow with [Claude Code](https://claude.ai/code).
 
+<img width="1898" height="916" alt="image" src="https://github.com/user-attachments/assets/635a42ff-fc18-44c5-b992-5891247f93a3" />
+
 ---
 
 ## What it does
@@ -264,7 +266,10 @@ On the next `git pull` + `npm run sync`, ratings from the GitHub Actions environ
 
 ## Screenshots
 
-_Coming soon._
+<img width="1882" height="882" alt="image" src="https://github.com/user-attachments/assets/b79ca3a9-e7ee-4a54-b209-0fed46c93eb8" />
+
+<img width="1898" height="916" alt="image" src="https://github.com/user-attachments/assets/635a42ff-fc18-44c5-b992-5891247f93a3" />
+
 
 ---
 
