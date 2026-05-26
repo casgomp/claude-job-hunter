@@ -3,7 +3,8 @@ require('dotenv').config({ path: require('path').join(__dirname, '../../.env') }
 const fs        = require('fs');
 const path      = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
-const { getJobs, getRatings } = require('./database');
+const { getJobs, getRatings, updateJobScoring } = require('./database');
+const { scoreJob } = require('./scorer');
 
 const LOG_DIR     = path.join(__dirname, '../logs');
 const OUT_PATH    = path.join(LOG_DIR, 'evaluation_report.json');
@@ -170,6 +171,42 @@ function writeImprovedPrompt(scorerContent, rulesStart, closingIdx, newRules) {
   fs.writeFileSync(SCORER_PATH, newContent);
 }
 
+// ── Re-score flagged jobs ────────────────────────────────────────────────────
+
+// Issue types that warrant a fresh score (hard caps will apply automatically).
+const RESCORE_TYPES = new Set(['us_restricted', 'german_only', 'obvious_error']);
+
+async function rescoreFlaggedJobs(client, jobs, issues) {
+  const toRescore = (issues || []).filter(i => RESCORE_TYPES.has(i.type));
+  if (toRescore.length === 0) return 0;
+
+  console.log(`[eval] Re-scoring ${toRescore.length} flagged job(s)...`);
+  let count = 0;
+  for (const issue of toRescore) {
+    const job = jobs.find(j => j.id === issue.job_id);
+    if (!job) continue;
+    try {
+      // Pass DB fields through the _country/_work_type aliases scorer.js expects
+      const jobForScoring = { ...job, _country: job.country, _work_type: job.work_type };
+      const { parsed } = await scoreJob(client, jobForScoring);
+      updateJobScoring(job.id, {
+        score:               parsed.match_score,
+        reasoning:           parsed.reasoning,
+        eligibility_flags:   parsed.eligibility_flags,
+        highlights:          parsed.highlights,
+        stack:               parsed.stack,
+        experience_required: parsed.experience_required,
+        contract_type:       parsed.contract_type,
+      });
+      console.log(`  [${issue.type}] "${job.title}" @ ${job.company}: ${issue.score} → ${parsed.match_score}/10`);
+      count++;
+    } catch (err) {
+      console.warn(`  rescore failed for job ${job.id} ("${job.title}"): ${err.message}`);
+    }
+  }
+  return count;
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 async function runEvaluator() {
@@ -207,13 +244,18 @@ async function runEvaluator() {
   writeImprovedPrompt(scorerContent, rulesStart, closingIdx, updatedRules);
   console.log('[eval] scorer.js updated.');
 
-  // Step 3: attach diff to report
+  // Step 3: re-score flagged jobs with the updated rules now in effect
+  const rescored = await rescoreFlaggedJobs(client, jobs, report.issues);
+  if (rescored > 0) console.log(`[eval] Re-scored ${rescored} job(s).`);
+  report.rescored_count = rescored;
+
+  // Step 4: attach diff to report
   report.prompt_update = {
     previous_rules: previousRules,
     updated_rules:  updatedRules,
   };
 
-  // Step 4: save report
+  // Step 5: save report
   fs.mkdirSync(LOG_DIR, { recursive: true });
   fs.writeFileSync(OUT_PATH, JSON.stringify(report, null, 2));
   console.log(`[eval] Report saved to ${OUT_PATH}`);

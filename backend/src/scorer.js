@@ -22,23 +22,46 @@ ${fs.readFileSync(CRITERIA_PATH, 'utf8')}
 
 Evaluation rules:
 - match_score: integer 1–10 (10 = perfect match for the candidate's profile and goals). Follow the Match Scoring section in the criteria, then apply the hard caps below.
-- reasoning: 2–3 sentences explaining the match score — focus on role fit, eligibility risks, and location.
+- reasoning: 2–3 sentences explaining the match score — focus on role fit, eligibility risks, and location. If any hard cap is triggered, explicitly cite which cap and the trigger phrase from the posting.
 - eligibility_flags: array of specific concern strings (e.g. "requires degree", "Werkstudent eligibility uncertain", "requires C1 German", "requires US work authorization", "requires Japanese language"). Empty array if none.
 - highlights: 1–2 sentences on what makes this role specifically interesting for the candidate, or why it scores low.
 - stack: array of programming languages, frameworks, and tools explicitly mentioned in the posting (e.g. ["Python", "Django", "PostgreSQL"]). Empty array if none specified.
 - experience_required: one of exactly: "entry-level", "0-1 years", "1-2 years", "2+ years", or "not specified".
 - contract_type: one of exactly: "internship", "Werkstudent", "full-time", "part-time", "contract", or "not specified".
 
-Hard caps (apply after initial scoring — take the LOWEST applicable cap):
-- Cap at 3 if the role requires US work authorization, US citizenship, security clearance, or is US-only remote. This applies even if the title says "Junior" or "Remote".
-- Cap at 3 if the listing is written almost entirely in German (not English or bilingual) — also add "German-only listing" to eligibility_flags.
-- Cap at 3 if the role requires German proficiency (B2 or higher, or unspecified "fluent German"), since the candidate's German level is limited.
-- Cap at 3 for jobs located in or restricted to non-target regions (e.g. ANZ, US, Dallas, APAC-only, LATAM-only) regardless of seniority match. Add a specific region flag to eligibility_flags.
-- Cap at 4 if the role description contradicts the title (e.g. "Junior" title but 5+ years required), or if the remote/hybrid scope is unclear or contradictory. Add a flag describing the contradiction.
+Hard caps (apply after initial scoring — take the LOWEST applicable cap). These caps are STRICT and apply regardless of title, stack match, or remote flexibility. ALWAYS re-check eligibility_flags before finalizing match_score:
+
+- Cap at 3 (US/clearance eligibility): If the posting requires US work authorization, US citizenship, green card, security clearance, or is US-only remote, the score MUST be ≤3. This rule triggers AUTOMATICALLY and UNCONDITIONALLY whenever eligibility_flags contains any of: "requires US work authorization", "requires US citizenship", "requires green card", "requires security clearance", "US-only", or the posting text mentions "must be US citizen", "must be authorized to work in the US", "US persons only", or equivalent. This cap overrides any "Junior", "Entry", "Graduate", or "Remote" framing in the title — do not exceed 3 under any circumstance. Before returning, verify: if any US-eligibility flag is present, match_score ≤ 3.
+
+- Cap at 3 (German language): If the role requires German at B2 or higher, requires C1/C2 German, mentions "fluent German" / "verhandlungssicher" / "muttersprachlich", or the listing itself is written almost entirely in German (not English or bilingual), the score MUST be ≤3. This rule triggers automatically whenever eligibility_flags contains any of: "German-only listing", "requires C1 German", "requires C2 German", "requires fluent German", "requires B2 German". This cap applies to Werkstudent roles as well — do not exempt them.
+
+- Cap at 3 (non-target region): For jobs located in or restricted to non-target regions (e.g. ANZ, US, Dallas, APAC-only, LATAM-only, India-only), cap at 3 regardless of seniority match. Add a specific region flag to eligibility_flags.
+
+- Cap at 4 (geography/language contradicts candidate target): If eligibility_flags indicate the listing language or location contradicts the candidate's target geography (e.g. Italian-language listing, French-only listing, Spanish-only listing, ANZ-based posting, APAC-based posting, LATAM-based posting) and no explicit EU/Berlin/Japan accommodation is stated, cap at 4. If the location cap at 3 above also applies, take the lower cap.
+
+- Cap at 4 (timezone-incompatible remote): If a role is nominally "remote" but the company/team is based in ANZ, US, or another non-EU region with no explicit EU-timezone allowance, cap at 4 even if remote work is offered. Add "timezone risk: <region>" to eligibility_flags.
+
+- Cap at 4 (title/description contradiction): If the role description contradicts the title (e.g. "Junior" title but 5+ years required), or if the remote/hybrid scope is unclear or contradictory, cap at 4. Add a flag describing the contradiction.
+
+- Cap at 4 (experience exceeds candidate level + title contradiction): If experience_required is "1-2 years" or "2+ years" (i.e. exceeds candidate's level) AND the title implies more junior framing (e.g. "Junior", "Graduate", "Entry") OR the description otherwise contradicts the title, cap at 4. Add both the experience flag and the contradiction flag to eligibility_flags.
+
+- Cap at 5 (ambiguous remote without confirmed EU/Berlin/Japan eligibility): If a role is listed as "remote" or "global" but the posting does NOT explicitly confirm EU work eligibility, Berlin-based hiring, or Japan-based hiring (e.g. no mention of EU entity, no EU/EMEA timezone requirement, no explicit "open to EU candidates"), cap at 5. Add "EU eligibility unconfirmed" to eligibility_flags. If a stronger cap (US, ANZ, timezone) applies, take the lower cap.
+
+- Cap at 5 (non-software-engineering role): If the role is primarily non-engineering (e.g. data analyst, BI, product manager, designer, IT support, QA-only manual testing, DevOps-only with no coding, technical writer, sales engineer), cap at 5. In the reasoning, cite the specific phrase from the description that triggered this cap (e.g. "description says 'primary responsibility is dashboard maintenance in Tableau'"). Add "non-SWE role" to eligibility_flags.
+
+Seniority verification:
+- Do not rely on the job title alone (e.g. "Junior", "Graduate") to determine seniority. Always cross-check the experience_required field and the body of the description before assigning a score. If the title says "Junior" but the description requires 3+ years, treat it as the higher seniority and apply the title/description contradiction cap (4).
+- Two roles with the same title but different experience_required values should be scored according to experience_required, not the title.
+- When a company posts both junior and mid/senior versions of similar roles (e.g. home24-style clusters), verify the actual seniority from the description body — required years of experience, scope of responsibility, expected autonomy — rather than trusting the "Junior" label. If the description reads as mid-level despite a junior title, apply the title/description contradiction cap (4) and note the specific evidence in reasoning.
 
 Consistency rules:
 - For similarly-qualified entry-level roles (same company, same source, comparable seniority and eligibility), small differences in stack familiarity must not produce gaps larger than 1 point. Anchor the score primarily on role level, eligibility, and location fit; treat stack overlap as a secondary modifier.
 - Do not inflate scores above 6 based on stack match alone if eligibility or location fit is weak.
+- Pan-EU job boards (OfferZen, EU Remote, Honeypot, etc.) with entry-level roles requiring ~1 year of experience and no eligibility blockers should score 6 by default — adjust ±1 only for clear stack alignment or mismatch, not for board prestige. Apply this baseline uniformly across all such listings.
+
+Final verification step (before returning JSON):
+- Re-scan eligibility_flags. For each flag, confirm the appropriate cap has been applied and match_score does not exceed it.
+- If multiple caps apply, the FINAL match_score must equal the LOWEST cap.
 
 Return ONLY valid JSON with these keys: match_score, reasoning, eligibility_flags, highlights, stack, experience_required, contract_type.
 Do not include markdown fences or any text outside the JSON object.`;
