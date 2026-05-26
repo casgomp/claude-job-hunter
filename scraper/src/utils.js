@@ -1,3 +1,35 @@
+// Title patterns that indicate a senior/lead role outside the candidate's level.
+// Exception: "junior architect" is allowed through.
+const SENIOR_TITLE_PATTERNS = [
+  /\bsenior\b/i,
+  /\blead\b/i,
+  /\bprincipal\b/i,
+  /\bstaff\b/i,
+  /\bmanager\b/i,
+  /\bdirector\b/i,
+  /\bhead\s+of\b/i,
+  /\barchitect\b/i,
+  /\bcto\b/i,
+  /\bvp\b/i,
+  /\bvice\s+president\b/i,
+  /\bchief\b/i,
+];
+
+function isSeniorTitle(title) {
+  if (!title) return false;
+  if (/junior\s+architect/i.test(title)) return false;
+  return SENIOR_TITLE_PATTERNS.some(re => re.test(title));
+}
+
+// Returns true if the combined title+description text explicitly requires
+// more than 2 years of professional experience.
+function requiresMoreThanTwoYears(text) {
+  const matches = [...(text || '').matchAll(
+    /(\d+)\+?\s*(?:year|yr)s?\s*(?:of\s+)?(?:relevant\s+|professional\s+|work\s+|hands.on\s+)?experience/gi
+  )];
+  return matches.some(m => parseInt(m[1], 10) > 2);
+}
+
 // German stopwords that are not English words — their presence indicates German text.
 const DE_STOPWORDS = new Set([
   'und','die','der','das','für','mit','von','auf','ist','nicht','auch','werden',
@@ -90,4 +122,4 @@ function normalizeAndDeduplicate(jobs) {
   }));
 }
 
-module.exports = { normalizeAndDeduplicate };
+module.exports = { normalizeAndDeduplicate, isSeniorTitle, requiresMoreThanTwoYears };

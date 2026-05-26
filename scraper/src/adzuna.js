@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { isSeniorTitle, requiresMoreThanTwoYears } = require('./utils');
 
 // Germany queries
 const DE_QUERIES = [
@@ -18,23 +19,16 @@ const ALL_QUERIES = [...DE_QUERIES];
 const RESULTS_PER_PAGE = 50;
 const RETRY_DELAY_MS   = 3000;
 
-// For Japan: exclude roles explicitly requiring > 1 year of experience
-function requiresMoreThanOneYear(job) {
-  const text = `${job.title || ''} ${job.description || ''}`;
-  const matches = [...text.matchAll(/(\d+)\s*\+?\s*(?:year|yr)s?\s*(?:of\s+)?(?:relevant\s+|professional\s+)?experience/gi)];
-  return matches.some(m => parseInt(m[1], 10) > 1);
-}
-
 async function fetchAdzuna(logger) {
   const appId  = process.env.ADZUNA_APP_ID;
   const appKey = process.env.ADZUNA_APP_KEY;
   if (!appId || !appKey) throw new Error('ADZUNA_APP_ID or ADZUNA_APP_KEY not set in .env');
 
   const jobs = [];
+  const totals = { raw: 0, senior: 0, experience: 0, kept: 0 };
+  const seniorTitlesExcluded = [];
 
   for (const { what, pages, country, where } of ALL_QUERIES) {
-    const isJapan = country === 'jp';
-
     for (let page = 1; page <= pages; page++) {
       await sleep(500);
       const results = await fetchPage({ appId, appKey, what, where, page, country });
@@ -45,10 +39,14 @@ async function fetchAdzuna(logger) {
         const retry = await fetchPage({ appId, appKey, what, where, page, country });
 
         if (retry !== null) {
-          const kept = isJapan ? retry.filter(j => !requiresMoreThanOneYear(j)) : retry;
-          jobs.push(...kept.map(j => normalize(j, isJapan)));
+          const { kept, stat } = applyFilters(retry, seniorTitlesExcluded);
+          totals.raw        += retry.length;
+          totals.senior     += stat.senior;
+          totals.experience += stat.experience;
+          totals.kept       += kept.length;
+          jobs.push(...kept.map(j => normalize(j)));
           logger.logQuery({ source: 'adzuna', query: what, where: where || null, page, results: kept.length, error: 'timeout', retried: true, retry_outcome: 'success' });
-          console.log(`  [adzuna/${country}] "${what}"${where ? ` in ${where}` : ''} p${page} (retry): ${kept.length} results`);
+          console.log(`  [adzuna/${country}] "${what}"${where ? ` in ${where}` : ''} p${page} (retry): ${retry.length} raw → ${kept.length} kept (${stat.senior} senior, ${stat.experience} exp)`);
           if (retry.length < RESULTS_PER_PAGE) break;
         } else {
           logger.logQuery({ source: 'adzuna', query: what, where: where || null, page, results: 0, error: 'timeout', retried: true, retry_outcome: 'failed' });
@@ -56,16 +54,46 @@ async function fetchAdzuna(logger) {
           console.warn(`  [adzuna/${country}] "${what}" p${page} retry also failed — skipping`);
         }
       } else {
-        const kept = isJapan ? results.filter(j => !requiresMoreThanOneYear(j)) : results;
-        jobs.push(...kept.map(j => normalize(j, isJapan)));
+        const { kept, stat } = applyFilters(results, seniorTitlesExcluded);
+        totals.raw        += results.length;
+        totals.senior     += stat.senior;
+        totals.experience += stat.experience;
+        totals.kept       += kept.length;
+        jobs.push(...kept.map(j => normalize(j)));
         logger.logQuery({ source: 'adzuna', query: what, where: where || null, page, results: kept.length });
-        console.log(`  [adzuna/${country}] "${what}"${where ? ` in ${where}` : ''} p${page}: ${kept.length} results`);
+        console.log(`  [adzuna/${country}] "${what}"${where ? ` in ${where}` : ''} p${page}: ${results.length} raw → ${kept.length} kept (${stat.senior} senior, ${stat.experience} exp)`);
         if (results.length < RESULTS_PER_PAGE) break;
       }
     }
   }
 
+  const totalExcluded = totals.raw - totals.kept;
+  console.log(`\n[adzuna] FILTER SUMMARY: ${totals.raw} raw → ${totals.kept} kept (${totalExcluded} excluded)`);
+  console.log(`  Senior title:    ${totals.senior}`);
+  console.log(`  Experience >2yr: ${totals.experience}`);
+  if (seniorTitlesExcluded.length) {
+    console.log(`  Senior titles excluded:`);
+    [...new Set(seniorTitlesExcluded)].forEach(t => console.log(`    - ${t}`));
+  }
+
   return jobs;
+}
+
+function applyFilters(results, seniorTitlesExcluded) {
+  const stat = { senior: 0, experience: 0 };
+  const kept = results.filter(j => {
+    if (isSeniorTitle(j.title)) {
+      stat.senior++;
+      seniorTitlesExcluded.push(j.title);
+      return false;
+    }
+    if (requiresMoreThanTwoYears(`${j.title || ''} ${j.description || ''}`)) {
+      stat.experience++;
+      return false;
+    }
+    return true;
+  });
+  return { kept, stat };
 }
 
 async function fetchPage({ appId, appKey, what, where, page, country }) {
@@ -93,12 +121,11 @@ async function fetchPage({ appId, appKey, what, where, page, country }) {
   }
 }
 
-function normalize(job, isJapan = false) {
+function normalize(job) {
   const salaryMin = job.salary_min;
   const salaryMax = job.salary_max;
-  const currency  = isJapan ? 'JPY / year' : 'EUR / year';
   const salary    = salaryMin || salaryMax
-    ? `${salaryMin ?? '?'} - ${salaryMax ?? '?'} ${currency}`
+    ? `${salaryMin ?? '?'} - ${salaryMax ?? '?'} EUR / year`
     : null;
 
   const fullText = `${job.title || ''} ${job.description || ''}`.toLowerCase();
@@ -116,7 +143,7 @@ function normalize(job, isJapan = false) {
     source:      'adzuna',
     _is_remote:  isRemote,
     _raw_id:     job.id,
-    _country:    isJapan ? 'Japan' : null,
+    _country:    null,
   };
 }
 

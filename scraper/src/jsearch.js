@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { isSeniorTitle, requiresMoreThanTwoYears } = require('./utils');
 
 const QUERIES = [
   // ── Europe / Germany ────────────────────────────────────────────────────────
@@ -13,7 +14,11 @@ const QUERIES = [
   { query: 'software engineer intern Tokyo English',    remoteOnly: false, isJapan: true },
 ];
 
-// Patterns that indicate a role is restricted to US citizens/residents.
+// Country codes to hard-exclude regardless of query — these regions require
+// work authorization the candidate does not have.
+const EXCLUDED_COUNTRIES = new Set(['US', 'CA', 'AU', 'NZ']);
+
+// Text patterns that indicate a role is restricted to US citizens/residents.
 const US_EXCLUSION_PATTERNS = [
   /\bus\.?\s*citizen(ship)?\b/i,
   /united\s+states\s+citizen/i,
@@ -35,20 +40,15 @@ function isUsOnly(job) {
   return US_EXCLUSION_PATTERNS.some(re => re.test(text));
 }
 
-// For Japan queries: exclude roles explicitly requiring > 1 year of experience.
-function requiresMoreThanOneYear(job) {
-  const text = `${job.job_title || ''} ${job.job_description || ''}`;
-  const matches = [...text.matchAll(/(\d+)\s*\+?\s*(?:year|yr)s?\s*(?:of\s+)?(?:relevant\s+|professional\s+)?experience/gi)];
-  return matches.some(m => parseInt(m[1], 10) > 1);
-}
-
 async function fetchJSearch(logger) {
   const apiKey = process.env.JSEARCH_API_KEY;
   if (!apiKey) throw new Error('JSEARCH_API_KEY not set in .env');
 
   const jobs = [];
-  let totalRaw = 0;
-  let totalFiltered = 0;
+
+  // Cumulative filter stats across all queries
+  const totals = { raw: 0, us_country: 0, us_text: 0, senior: 0, experience: 0, japan_loc: 0, kept: 0 };
+  const seniorTitlesExcluded = [];
 
   for (const { query, remoteOnly, isJapan } of QUERIES) {
     await sleep(400);
@@ -69,32 +69,47 @@ async function fetchJSearch(logger) {
       });
 
       const raw = response.data?.data || [];
+      totals.raw += raw.length;
+
+      const queryStat = { us_country: 0, us_text: 0, senior: 0, experience: 0, japan_loc: 0 };
 
       let passed;
       if (isJapan) {
-        // Accept jobs located in Japan (country=JP) or where city/location contains
-        // Tokyo/Osaka. Exclude US-restricted and roles requiring >1 yr experience.
         passed = raw.filter(j => {
           const countryOk = j.job_country === 'JP' ||
-            ['tokyo', 'osaka'].some(c => (j.job_city || '').toLowerCase().includes(c)) ||
+            ['tokyo', 'osaka'].some(c => (j.job_city  || '').toLowerCase().includes(c)) ||
             ['tokyo', 'osaka'].some(c => (j.job_state || '').toLowerCase().includes(c));
-          return countryOk && !isUsOnly(j) && !requiresMoreThanOneYear(j);
+          if (!countryOk)                                                         { queryStat.japan_loc++;  return false; }
+          if (isSeniorTitle(j.job_title))                                         { queryStat.senior++;     seniorTitlesExcluded.push(j.job_title); return false; }
+          if (requiresMoreThanTwoYears(`${j.job_title} ${j.job_description}`))    { queryStat.experience++; return false; }
+          return true;
         });
       } else {
-        passed = raw.filter(j => !isUsOnly(j));
+        passed = raw.filter(j => {
+          if (EXCLUDED_COUNTRIES.has(j.job_country))                              { queryStat.us_country++; return false; }
+          if (isUsOnly(j))                                                         { queryStat.us_text++;    return false; }
+          if (isSeniorTitle(j.job_title))                                         { queryStat.senior++;     seniorTitlesExcluded.push(j.job_title); return false; }
+          if (requiresMoreThanTwoYears(`${j.job_title} ${j.job_description}`))    { queryStat.experience++; return false; }
+          return true;
+        });
       }
 
-      const filteredCount = raw.length - passed.length;
-      totalRaw      += raw.length;
-      totalFiltered += filteredCount;
+      totals.us_country  += queryStat.us_country;
+      totals.us_text     += queryStat.us_text;
+      totals.senior      += queryStat.senior;
+      totals.experience  += queryStat.experience;
+      totals.japan_loc   += queryStat.japan_loc;
+      totals.kept        += passed.length;
 
+      const excluded = raw.length - passed.length;
       jobs.push(...passed.map(j => normalize(j, remoteOnly, isJapan)));
 
       logger.logQuery({
         source: 'jsearch', query, remoteOnly,
-        results: raw.length, us_filtered: filteredCount, passed: passed.length,
+        results: raw.length, passed: passed.length,
+        filtered: { ...queryStat },
       });
-      console.log(`  [jsearch] "${query}" (remote=${remoteOnly}${isJapan ? ',JP' : ''}): ${raw.length} raw, ${filteredCount} filtered, ${passed.length} kept`);
+      console.log(`  [jsearch] "${query}": ${raw.length} raw → ${passed.length} kept (${excluded} excluded: ${queryStat.us_country} US-country, ${queryStat.us_text} US-text, ${queryStat.senior} senior, ${queryStat.experience} exp, ${queryStat.japan_loc} JP-loc)`);
     } catch (err) {
       const status  = err.response?.status;
       const message = status ? `HTTP ${status}` : err.message;
@@ -103,12 +118,25 @@ async function fetchJSearch(logger) {
     }
   }
 
-  if (totalRaw > 0) {
-    const usRate = totalFiltered / totalRaw;
+  // Summary
+  const totalExcluded = totals.raw - totals.kept;
+  console.log(`\n[jsearch] FILTER SUMMARY: ${totals.raw} raw → ${totals.kept} kept (${totalExcluded} excluded)`);
+  console.log(`  US country code: ${totals.us_country}`);
+  console.log(`  US auth text:    ${totals.us_text}`);
+  console.log(`  Senior title:    ${totals.senior}`);
+  console.log(`  Experience >2yr: ${totals.experience}`);
+  if (totals.japan_loc) console.log(`  Japan location:  ${totals.japan_loc}`);
+  if (seniorTitlesExcluded.length) {
+    console.log(`  Senior titles excluded:`);
+    [...new Set(seniorTitlesExcluded)].forEach(t => console.log(`    - ${t}`));
+  }
+
+  if (totals.raw > 0) {
+    const usRate = (totals.us_country + totals.us_text) / totals.raw;
     if (usRate >= US_RATE_WARNING_THRESHOLD) {
       const pct     = Math.round(usRate * 100);
-      const warning = `JSearch returned ${pct}% filtered results (${totalFiltered}/${totalRaw}).`;
-      console.warn(`\n  [jsearch] WARNING: ${warning}`);
+      const warning = `JSearch returned ${pct}% US-filtered results (${totals.us_country + totals.us_text}/${totals.raw}).`;
+      console.warn(`  [jsearch] WARNING: ${warning}`);
       logger.logError({ source: 'jsearch', message: warning });
     }
   }

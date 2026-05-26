@@ -34,7 +34,7 @@ async function run() {
 
   const rawTotal = jsearchJobs.length + adzunaJobs.length;
 
-  console.log(`\n--- Raw results (after US filter for JSearch) ---`);
+  console.log(`\n--- After source-level filters (senior/experience/US/country) ---`);
   console.log(`  JSearch:  ${jsearchJobs.length}`);
   console.log(`  Adzuna:   ${adzunaJobs.length}`);
   console.log(`  Combined: ${rawTotal}`);
@@ -42,34 +42,40 @@ async function run() {
   const allJobs = normalizeAndDeduplicate([...jsearchJobs, ...adzunaJobs]);
 
   const locationIncluded = allJobs.filter(j => !j._location_excluded);
-  const excluded         = allJobs.filter(j => j._location_excluded);
+  const locationExcluded = allJobs.filter(j => j._location_excluded);
   const germanOnly       = locationIncluded.filter(j => j._german_only);
   const included         = locationIncluded.filter(j => !j._german_only);
   const flagged          = included.filter(j => j._location_flagged);
 
-  console.log(`\n--- After deduplication: ${allJobs.length} unique jobs ---`);
-  console.log(`\n--- Location filtering ---`);
-  console.log(`  Included:         ${included.length}`);
-  console.log(`  Excluded:         ${excluded.length}`);
-  console.log(`  German-only (excluded): ${germanOnly.length}`);
-  console.log(`  Flagged (review): ${flagged.length}`);
+  console.log(`\n--- After deduplication: ${allJobs.length} unique ---`);
+  console.log(`\n--- Location + language filters ---`);
+  console.log(`  Location excluded:      ${locationExcluded.length}`);
+  console.log(`  German-only excluded:   ${germanOnly.length}`);
+  console.log(`  Passed:                 ${included.length}`);
+  console.log(`  Flagged (manual check): ${flagged.length}`);
 
   if (germanOnly.length > 0) {
-    console.log(`\n--- German-only listings (excluded) ---`);
-    germanOnly.forEach(j => console.log(`  ${j.title} @ ${j.company}`));
+    console.log(`\n  German-only listings excluded:`);
+    germanOnly.forEach(j => console.log(`    - ${j.title} @ ${j.company}`));
+  }
+
+  if (locationExcluded.length > 0) {
+    console.log(`\n  Location-excluded listings:`);
+    locationExcluded.slice(0, 10).forEach(j => console.log(`    - [${j._work_type}] ${j.title} @ ${j.company} — ${j._flag_reason}`));
+    if (locationExcluded.length > 10) console.log(`    ... and ${locationExcluded.length - 10} more`);
   }
 
   const jsearchFinal = included.filter(j => j.source === 'jsearch').length;
   const adzunaFinal  = included.filter(j => j.source === 'adzuna').length;
 
-  console.log(`\n--- Final results by source ---`);
+  console.log(`\n--- Final output ---`);
   console.log(`  JSearch: ${jsearchFinal}`);
   console.log(`  Adzuna:  ${adzunaFinal}`);
   console.log(`  Total:   ${included.length}`);
 
   const outputPath = path.join(__dirname, '../raw_jobs.json');
   fs.writeFileSync(outputPath, JSON.stringify(included, null, 2));
-  console.log(`\nSaved to scraper/raw_jobs.json`);
+  console.log(`\nSaved ${included.length} jobs to scraper/raw_jobs.json`);
 
   if (flagged.length > 0) {
     console.log(`\n--- Flagged for manual review ---`);
@@ -77,13 +83,15 @@ async function run() {
   }
 
   const logPath = logger.append({
-    before_dedup: rawTotal,
-    after_dedup:  allJobs.length,
-    included:     included.length,
-    excluded,
-    flagged:      flagged.length,
+    before_dedup:     rawTotal,
+    after_dedup:      allJobs.length,
+    included:         included.length,
+    location_excluded: locationExcluded.length,
+    german_excluded:  germanOnly.length,
+    excluded:         locationExcluded,
+    flagged:          flagged.length,
   });
-  console.log(`Logged to ${path.relative(process.cwd(), logPath)}`);
+  console.log(`\nLogged to ${path.relative(process.cwd(), logPath)}`);
 }
 
 run().catch(err => {
