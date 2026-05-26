@@ -178,18 +178,32 @@ const RESCORE_TYPES = new Set(['us_restricted', 'german_only', 'obvious_error'])
 
 async function rescoreFlaggedJobs(client, jobs, issues) {
   const toRescore = (issues || []).filter(i => RESCORE_TYPES.has(i.type));
-  if (toRescore.length === 0) return 0;
+  console.log(`[rescore] ${(issues || []).length} total issues → ${toRescore.length} flagged for re-scoring (types: ${[...RESCORE_TYPES].join(', ')})`);
+  if (toRescore.length === 0) {
+    console.log('[rescore] Nothing to re-score.');
+    return 0;
+  }
 
-  console.log(`[eval] Re-scoring ${toRescore.length} flagged job(s)...`);
   let count = 0;
   for (const issue of toRescore) {
+    console.log(`\n[rescore] --- job_id=${issue.job_id} type=${issue.type} reported_score=${issue.score} ---`);
+    console.log(`[rescore]   title:   "${issue.title}" @ ${issue.company}`);
+
     const job = jobs.find(j => j.id === issue.job_id);
-    if (!job) continue;
+    if (!job) {
+      console.warn(`[rescore]   SKIP — job id ${issue.job_id} not found in jobs array`);
+      continue;
+    }
+    console.log(`[rescore]   db score before: ${job.score}`);
+
     try {
-      // Pass DB fields through the _country/_work_type aliases scorer.js expects
       const jobForScoring = { ...job, _country: job.country, _work_type: job.work_type };
+      console.log(`[rescore]   calling scoreJob (_country=${jobForScoring._country}, _work_type=${jobForScoring._work_type})...`);
       const { parsed } = await scoreJob(client, jobForScoring);
-      updateJobScoring(job.id, {
+      console.log(`[rescore]   scoreJob returned: ${parsed.match_score}/10`);
+      console.log(`[rescore]   flags: ${JSON.stringify(parsed.eligibility_flags)}`);
+
+      const changes = updateJobScoring(job.id, {
         score:               parsed.match_score,
         reasoning:           parsed.reasoning,
         eligibility_flags:   parsed.eligibility_flags,
@@ -198,12 +212,15 @@ async function rescoreFlaggedJobs(client, jobs, issues) {
         experience_required: parsed.experience_required,
         contract_type:       parsed.contract_type,
       });
-      console.log(`  [${issue.type}] "${job.title}" @ ${job.company}: ${issue.score} → ${parsed.match_score}/10`);
+      console.log(`[rescore]   updateJobScoring rows changed: ${changes}`);
+      console.log(`[rescore]   RESULT: ${job.score} → ${parsed.match_score}/10 (db update ${changes > 0 ? 'OK' : 'FAILED — 0 rows changed'})`);
       count++;
     } catch (err) {
-      console.warn(`  rescore failed for job ${job.id} ("${job.title}"): ${err.message}`);
+      console.error(`[rescore]   ERROR: ${err.message}`);
+      console.error(err.stack);
     }
   }
+  console.log(`\n[rescore] Done — ${count}/${toRescore.length} jobs successfully re-scored.`);
   return count;
 }
 

@@ -19,6 +19,7 @@ const QUERIES = [
 const EXCLUDED_COUNTRIES = new Set(['US', 'CA', 'AU', 'NZ']);
 
 // Text patterns that indicate a role is restricted to US citizens/residents.
+// Checked against full text (title + description).
 const US_EXCLUSION_PATTERNS = [
   /\bus\.?\s*citizen(ship)?\b/i,
   /united\s+states\s+citizen/i,
@@ -33,11 +34,25 @@ const US_EXCLUSION_PATTERNS = [
   /\bpolygraph\s+required\b/i,
 ];
 
+// Additional patterns checked against job description only — strong signals of a
+// US-based role even when the country field is missing or wrong.
+const US_DESCRIPTION_PATTERNS = [
+  /\bW-?2\b/,                            // US payroll tax form
+  /\b401\s*\(?\s*k\s*\)?/i,              // US retirement plan
+  /\bPTO\b/,                              // US term for paid leave
+  /\b(dallas|austin|seattle|chicago)\b/i,
+  /\bnew\s+york\b/i,
+  /\bsan\s+francisco\b/i,
+  /\blos\s+angeles\b/i,
+];
+
 const US_RATE_WARNING_THRESHOLD = 0.7;
 
 function isUsOnly(job) {
-  const text = `${job.job_title || ''} ${job.job_description || ''}`;
-  return US_EXCLUSION_PATTERNS.some(re => re.test(text));
+  const fullText = `${job.job_title || ''} ${job.job_description || ''}`;
+  if (US_EXCLUSION_PATTERNS.some(re => re.test(fullText))) return true;
+  const desc = job.job_description || '';
+  return US_DESCRIPTION_PATTERNS.some(re => re.test(desc));
 }
 
 async function fetchJSearch(logger) {

@@ -59,6 +59,35 @@ Hard caps (apply after initial scoring — take the LOWEST applicable cap). Thes
 
 - Cap at 5 (experience requirement exceeds candidate level — HARD): If`;
 
+const POSTPROCESS_CAP_PATTERNS = [
+  /\bhard\s+disqualifier\b/i,
+  /\bdisqualifier\b/i,
+  /\bUS\s+work\s+authoriz/i,
+  /\bW-?2\b/,
+  /\b[5-9]\d*\+\s*years?\b/i,        // 5+ years, 8+ years, etc.
+  /\bsenior\/lead\s+role\b/i,
+  /\bsenior.lead\s+role\b/i,
+];
+
+function applyPostProcessingCaps(parsed) {
+  const searchText = [
+    parsed.reasoning || '',
+    ...(parsed.eligibility_flags || []),
+  ].join(' ');
+
+  if (POSTPROCESS_CAP_PATTERNS.some(re => re.test(searchText))) {
+    return {
+      ...parsed,
+      match_score: 1,
+      eligibility_flags: [
+        ...(parsed.eligibility_flags || []),
+        'post-processing cap: disqualifier keyword in reasoning/flags',
+      ],
+    };
+  }
+  return parsed;
+}
+
 async function scoreJob(client, job) {
   const jobText = [
     `Title: ${job.title || 'N/A'}`,
@@ -95,7 +124,7 @@ async function scoreJob(client, job) {
   const textBlock = response.content.find(b => b.type === 'text');
   if (!textBlock) throw new Error('No text block in response');
 
-  const parsed = JSON.parse(textBlock.text.trim());
+  const parsed = applyPostProcessingCaps(JSON.parse(textBlock.text.trim()));
   return { parsed, usage: response.usage };
 }
 
