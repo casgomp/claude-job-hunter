@@ -113,6 +113,11 @@ export default function App() {
     fetchStats()
   }
 
+  const handleRatingUpdate = (id, rating) => {
+    setJobs(prev => prev.map(j => j.id === id ? { ...j, rating } : j))
+    setSelectedJob(prev => prev?.id === id ? { ...prev, rating } : prev)
+  }
+
   const handleEvaluate = async () => {
     setEvalState('loading')
     setEvalError(null)
@@ -197,6 +202,7 @@ export default function App() {
               job={selectedJob}
               onClose={() => setSelectedJob(null)}
               onStatusUpdate={handleStatusUpdate}
+              onRatingUpdate={handleRatingUpdate}
             />
           </div>
         )}

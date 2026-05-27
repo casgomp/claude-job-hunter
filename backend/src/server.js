@@ -20,7 +20,13 @@ const CV_DIR = path.join(__dirname, '../generated_cvs');
 
 app.use(cors());
 app.use(express.json());
-app.use('/cvs', express.static(CV_DIR));
+app.use('/cvs', express.static(CV_DIR, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.pdf')) {
+      res.setHeader('Content-Disposition', `attachment; filename="${path.basename(filePath)}"`)
+    }
+  },
+}));
 
 // ─── Jobs ────────────────────────────────────────────────────────────────────
 

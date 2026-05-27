@@ -112,7 +112,7 @@ function RatingForm({ job, onSaved }) {
   )
 }
 
-export default function JobDetail({ job, onClose, onStatusUpdate }) {
+export default function JobDetail({ job, onClose, onStatusUpdate, onRatingUpdate }) {
   const city    = parseCity(job.location, job.work_type)
   const country = parseCountry(job.location, job.country)
   const date    = formatDate(job.date_posted)
@@ -218,7 +218,7 @@ export default function JobDetail({ job, onClose, onStatusUpdate }) {
 
         <div className="detail-section">
           <h4>Your Rating</h4>
-          <RatingForm job={job} />
+          <RatingForm job={job} onSaved={rating => onRatingUpdate?.(job.id, rating)} />
         </div>
 
         {job.url && (
@@ -269,8 +269,7 @@ export default function JobDetail({ job, onClose, onStatusUpdate }) {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <a
                 href={cvUrl || '#'}
-                target="_blank"
-                rel="noopener noreferrer"
+                download
                 className="action-btn cv-btn is-active"
               >
                 ↓ Download CV
