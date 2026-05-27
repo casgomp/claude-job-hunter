@@ -3,6 +3,18 @@ import { parseCity, parseCountry } from '../App'
 
 const API = 'http://172.31.202.183:5000'
 
+function slugify(str) {
+  return (str || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 60)
+}
+
+function cvUrlFor(job) {
+  return `${API}/cvs/${slugify(job.company)}_${slugify(job.title)}.pdf`
+}
+
 function formatDate(iso) {
   if (!iso) return null
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -121,7 +133,9 @@ export default function JobDetail({ job, onClose, onStatusUpdate, onRatingUpdate
   const [cvState, setCvState] = useState(
     job.cv_generated ? 'done' : 'idle'
   )
-  const [cvUrl, setCvUrl] = useState(null)
+  const [cvUrl, setCvUrl] = useState(
+    job.cv_generated ? cvUrlFor(job) : null
+  )
 
   const actions = [
     { key: 'saved',    label: '💾 Save' },
