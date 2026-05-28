@@ -49,10 +49,6 @@ jobs:
         working-directory: backend
         run: node src/scorer.js
 
-      - name: Run evaluator (improve scoring prompt)
-        working-directory: backend
-        run: node src/evaluator.js
-
       - name: Commit updated job files
         run: |
           git config user.name  "github-actions[bot]"
